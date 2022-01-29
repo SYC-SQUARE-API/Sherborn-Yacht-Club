@@ -11,6 +11,7 @@ provider "aws" {
   region = var.region
 }
 
+# i've probably given too many permissions here
 module "iam_assumable_role" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-assumable-role"
   version = "4.10.1"
@@ -31,13 +32,16 @@ module "iam_assumable_role" {
   tags = {
       Terraform = true,
   }
+
+  trusted_role_services = [
+    "lambda.amazonaws.com"
+  ]
 }
 
 # hard coded bucket name
 module "s3-bucket" {
   source  = "terraform-aws-modules/s3-bucket/aws"
   version = "2.13.0"
-  # insert the 5 required variables here
 
   bucket = "syc-lambda-bucket"
 
@@ -69,3 +73,7 @@ module "s3-bucket" {
 }
 EOF
 }
+
+# define Lambda functions x2
+
+# define eventbridge cron job
