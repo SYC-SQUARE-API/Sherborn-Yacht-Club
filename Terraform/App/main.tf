@@ -91,6 +91,8 @@ module "lambda_function_existing_package_s3" {
 
   lambda_role = module.iam_assumable_role.iam_role_arn
 
+  timeout = 300
+
   allowed_triggers = {
     ScanAmiRule = {
       principal  = "events.amazonaws.com"
