@@ -75,5 +75,60 @@ EOF
 }
 
 # define Lambda functions x2
+locals {
+  my_function_source = "MembershipBot"
+}
+
+resource "aws_s3_bucket_object" "my_function" {
+  bucket = aws_s3_bucket.builds.id
+  key    = "${filemd5(local.my_function_source)}.zip"
+  source = local.my_function_source
+}
+
+module "lambda_function_existing_package_s3" {
+  source = "terraform-aws-modules/lambda/aws"
+
+  function_name = "MembershipBot"
+  description   = "Membership Bot"
+  handler       = "MembershipBot.main"
+  runtime       = "python3.8"
+
+  create_package      = false
+  s3_existing_package = {
+    bucket = module.s3-bucket.s3_bucket_id
+    key    = aws_s3_bucket_object.my_function.id
+  }
+
+  allowed_triggers = {
+    ScanAmiRule = {
+      principal  = "events.amazonaws.com"
+      source_arn = module.eventbridge.eventbridge_rule_arns["crons"]
+    }
+  }
+}
+
 
 # define eventbridge cron job
+module "eventbridge" {
+  source  = "terraform-aws-modules/eventbridge/aws"
+  version = "1.13.4"
+  # insert the 6 required variables her
+  create_bus = false
+
+  rules = {
+    crons = {
+      description         = "Trigger for a Lambda"
+      schedule_expression = "cron(0 10 * * ? *)"
+    }
+  }
+
+  targets = {
+    crons = [
+      {
+        name  = "MembershipBot"
+        arn   = module.lambda_function_existing_package_s3.lambda_function_arn
+        input = jsonencode({"job": "cron-by-rate"})
+      }
+    ]
+  }
+}

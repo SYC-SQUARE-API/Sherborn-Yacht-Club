@@ -104,52 +104,54 @@ def get_members(new_members, json_string, first):
 
 ## main code begin ##
 
-# definte variables
-new_members = []
-json_string = "https://api.squarespace.com/1.0/commerce/orders"
+def main(event, handler):
+    # definte variables
+    new_members = []
+    json_string = "https://api.squarespace.com/1.0/commerce/orders"
 
-# call member function
-new_members = get_members(new_members, json_string, True)
+    # call member function
+    new_members = get_members(new_members, json_string, True)
 
-## write new_members to google sheet ##
+    ## write new_members to google sheet ##
 
-# define the scope
-scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
+    # define the scope
+    scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
 
-# add credentials to the account
-creds = ServiceAccountCredentials.from_json_keyfile_name('googleCreds.json', scope)
+    # add credentials to the account
+    creds = ServiceAccountCredentials.from_json_keyfile_name('googleCreds.json', scope)
 
-# authorize the clientsheet 
-client = gspread.authorize(creds)
+    # authorize the clientsheet 
+    client = gspread.authorize(creds)
 
-# get the instance of the Spreadsheet
-spreadsheet = client.open('Membership Test')
+    # get the instance of the Spreadsheet
+    spreadsheet = client.open('Membership Test')
 
-# grab date info (maybe move up)
-todays_date = date.today()
+    # grab date info (maybe move up)
+    todays_date = date.today()
 
-# make a spreadsheet for the year if necessary
-# set the target_sheet for the sheet we'll be writing to
-sheet_array = spreadsheet.worksheets()
-sheet_found = False
-
-for sheet in sheet_array:
-    if sheet.title == str(todays_date.year):
-        target_sheet = sheet
-        sheet_found = True
-        break
-
-if sheet_found == False:
-    target_sheet = spreadsheet.add_worksheet(str(todays_date.year), 1, 7, index=0)
-    target_sheet.append_row(['Renewal Type', 'Primary Name', 'Primary Email', 'Secondary Name', 'Secondary Email', 'Membership Type', 'Price'], value_input_option='USER-ENTERED', table_range='A1:B1')
-    # update sheet_array
+    # make a spreadsheet for the year if necessary
+    # set the target_sheet for the sheet we'll be writing to
     sheet_array = spreadsheet.worksheets()
-    target_sheet = sheet_array[0]
+    sheet_found = False
 
-# write to the google doc
-start_row = target_sheet.row_count + 1
-target_sheet.append_rows(new_members, value_input_option='USER-ENTERED', table_range='A{}'.format(start_row))
-target_sheet.columns_auto_resize(0, 7)
+    for sheet in sheet_array:
+        if sheet.title == str(todays_date.year):
+            target_sheet = sheet
+            sheet_found = True
+            break
 
-# check code finished
-print('end')
+    if sheet_found == False:
+        target_sheet = spreadsheet.add_worksheet(str(todays_date.year), 1, 7, index=0)
+        target_sheet.append_row(['Renewal Type', 'Primary Name', 'Primary Email', 'Secondary Name', 'Secondary Email', 'Membership Type', 'Price'], value_input_option='USER-ENTERED', table_range='A1:B1')
+        # update sheet_array
+        sheet_array = spreadsheet.worksheets()
+        target_sheet = sheet_array[0]
+
+    # write to the google doc
+    start_row = target_sheet.row_count + 1
+    target_sheet.append_rows(new_members, value_input_option='USER-ENTERED', table_range='A{}'.format(start_row))
+    target_sheet.columns_auto_resize(0, 7)
+
+    # check code finished
+    print('end')
+    return 0
