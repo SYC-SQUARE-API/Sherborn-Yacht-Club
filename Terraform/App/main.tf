@@ -75,16 +75,6 @@ EOF
 }
 
 # define Lambda functions x2
-locals {
-  my_function_source = "MembershipBot"
-}
-
-resource "aws_s3_bucket_object" "my_function" {
-  bucket = module.s3-bucket.s3_bucket_id
-  key    = "${filemd5(local.my_function_source)}.zip"
-  source = local.my_function_source
-}
-
 module "lambda_function_existing_package_s3" {
   source = "terraform-aws-modules/lambda/aws"
 
@@ -96,7 +86,7 @@ module "lambda_function_existing_package_s3" {
   create_package      = false
   s3_existing_package = {
     bucket = module.s3-bucket.s3_bucket_id
-    key    = aws_s3_bucket_object.my_function.id
+    key    = "MembershipBot.zip"
   }
 
   allowed_triggers = {
