@@ -80,7 +80,7 @@ locals {
 }
 
 resource "aws_s3_bucket_object" "my_function" {
-  bucket = aws_s3_bucket.builds.id
+  bucket = module.s3-bucket.s3_bucket_id
   key    = "${filemd5(local.my_function_source)}.zip"
   source = local.my_function_source
 }
@@ -91,7 +91,7 @@ module "lambda_function_existing_package_s3" {
   function_name = "MembershipBot"
   description   = "Membership Bot"
   handler       = "MembershipBot.main"
-  runtime       = "python3.8"
+  runtime       = "python3.9"
 
   create_package      = false
   s3_existing_package = {
