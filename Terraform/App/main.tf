@@ -89,6 +89,8 @@ module "lambda_function_existing_package_s3" {
     key    = "MembershipBot.zip"
   }
 
+  lambda_role = module.iam_assumable_role.iam_role_arn
+
   allowed_triggers = {
     ScanAmiRule = {
       principal  = "events.amazonaws.com"
