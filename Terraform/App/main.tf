@@ -12,6 +12,7 @@ provider "aws" {
 }
 
 # i've probably given too many permissions here
+# This role currently is not being used with Lambda, but might be useful eventually with enough functions
 module "iam_assumable_role" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-assumable-role"
   version = "4.10.1"
@@ -80,7 +81,7 @@ module "lambda_function_existing_package_s3" {
 
   function_name = "MembershipBot"
   description   = "Membership Bot"
-  handler       = "MembershipBot.main"
+  handler       = "MembershipBot.handler"
   runtime       = "python3.9"
 
   create_package      = false
@@ -89,7 +90,9 @@ module "lambda_function_existing_package_s3" {
     key    = "MembershipBot.zip"
   }
 
-  lambda_role = module.iam_assumable_role.iam_role_arn
+  environment_variables = {
+    SQUARESPACE_API_KEY = var.SQUARESPACE_API_KEY
+  }
 
   timeout = 300
 
@@ -99,6 +102,33 @@ module "lambda_function_existing_package_s3" {
       source_arn = module.eventbridge.eventbridge_rule_arns["crons"]
     }
   }
+
+  layers = [
+    module.lambda_layer_s3.lambda_layer_arn,
+  ]
+
+  tags = {
+    Terraform = "true"
+  }
+}
+
+module "lambda_layer_s3" {
+  source = "terraform-aws-modules/lambda/aws"
+
+  create_layer = true
+
+  layer_name          = "MembershipBot-layer"
+  description         = "General layer for gspread and google auth"
+  compatible_runtimes = ["python3.9"]
+
+  create_package      = false
+  s3_existing_package = {
+    bucket = module.s3-bucket.s3_bucket_id
+    key    = "LambdaLayer.zip"
+  }
+
+  store_on_s3 = true
+  s3_bucket   = module.s3-bucket.s3_bucket_id
 }
 
 
