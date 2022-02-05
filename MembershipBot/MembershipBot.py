@@ -1,157 +1,302 @@
+#!/usr/bin/env python3
+
+
 # importing the required libraries
+import os
+import sys
 import gspread
 import json
 import requests
-from importlib import reload
+#from importlib import reload
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import date, timedelta
-
-gspread = reload(gspread)
-
-## function definitions ##
+from datetime import date, datetime, timedelta
 
 ## function to get a nested list of all member data to be written
 ## function is recursive to iterate through multiple json pages
-## accepts three arguments, new_members a nested list, a JSON http string, and a boolean for if it's the first loop
-def get_members(new_members, json_string, first):
+def get_members(orders_api_endpoint, parameters):
+    member_list = []
+    commerce_creds = os.environ.get('SQUARESPACE_API_KEY')
 
-    commerce_creds = open('commerceCreds.txt', 'r')
-
-    # define JSON headers, these creds should be pulled from somewhere
+    # define JSON headers, API key pulled from environment variable SQUARESPACE_API_KEY
     headers = {
-        "Authorization": commerce_creds.readline(),
+        "Authorization": "Bearer " + os.environ.get('SQUARESPACE_API_KEY'),
         "User-Agent": "MembershipBot"
     }
 
-    # get the past 24 hours of orders, 10am UTC corresponds to 5am EST
-    todays_date = date.today()
-    modified_after = str(todays_date - timedelta(days=1)) + "T10:00:00Z"
-    modified_before = str(todays_date) + "T10:00:00Z"
+    response = requests.get(orders_api_endpoint, headers=headers, params=parameters)
+    if response.raise_for_status():
+        pass
+    else:
+        json_data = response.json()
 
-    # define JSON parameters
-    parameters = {
-        "modifiedAfter": modified_after,
-        "modifiedBefore": modified_before,
-        "fulfillmentStatus": "FULFILLED"
-    }
+    if response.status_code == requests.codes.ok:
+        for member in json_data['result']:
+            member_list.append(member)
 
-    # for testing only
-    #parameters = {
-    #    "modifiedAfter": "2021-01-01T12:00:00Z",
-    #    "modifiedBefore": "2021-12-31T12:00:00Z",
-    #    "fulfillmentStatus": "FULFILLED"
-    #}
+        if json_data['pagination']['hasNextPage']:
+            return (member_list + get_members(json_data['pagination']['nextPageUrl'], None))
+    else:
+        print("Return status was NOT OK: %s" % response.status_code)
+        return False
 
-    # fetch JSON page, the first run will need to provide parameters
-    if first == True:
-        response = requests.get(json_string, headers=headers, params=parameters)
-    else: 
-        response = requests.get(json_string, headers=headers)
+    return member_list
 
-    # load JSON into a map variable
-    member_dict = response.json()
+def parse_members(unparsed_members):
+    parsed_memberlist = []
 
     # create a list of types of memberships
-    member_types_list = ["Family Membership", "Partner Membership", "Individual Membership", "Emeritus Membership", "Junior Membership", "2022 Family Membership", "2022 Partner Membership", "2022 Individual Membership", "2022 Junior Membership"]
+    member_types_list = [   "Family Membership",
+                            "Partner Membership",
+                            "Individual Membership",
+                            "Emeritus Membership",
+                            "Junior Membership",
+                            "2022 Family Membership",
+                            "2022 Partner Membership",
+                            "2022 Individual Membership",
+                            "2022 Junior Membership",
+                        ]
+
+    row_types_list =    [   "Water-Row A",
+                            "Water-Row B",
+                            "Water-Row C",
+                            "Water-Row D",
+                            "Water-Row E",
+                            "Water-Row F",
+                            "Water-Row H",
+                            "Water-Row I",
+                        ]
 
     # iterate through every lineItem, which corresponds to an order in the system
     # we further select by only finding orders which correspond to memberships
-    for x in member_dict['result']:
-        for y in x['lineItems']:
-            nl_membership_type = y['productName']
-            if nl_membership_type in member_types_list:
-                # collect all fields to create a new line
-                # customizations is not valid for all types and is sometimes null
-                if y['customizations'] == None:
-                    nl_renewal_type = ""
-                else:
-                    nl_renewal_type = y['customizations'][0]['value']
+    for member in unparsed_members:
+        parsed_member = {}
 
-                # these fields apply to all types
-                nl_primary_name = x["billingAddress"]['firstName'] + " " + x["billingAddress"]['lastName']
-                nl_primary_email = x["customerEmail"]
-                nl_membership_price = y['unitPricePaid']['value']
+        parsed_member['name'] = member['billingAddress']['firstName'] + " " + member['billingAddress']['lastName']
+        parsed_member['email'] = member['customerEmail']
+        parsed_member['street_address'] = member['billingAddress']['address1']
+        parsed_member['city'] = member['billingAddress']['city']
+        parsed_member['state'] = member['billingAddress']['state']
+        parsed_member['zipcode'] = member['billingAddress']['postalCode']
+        parsed_member['created_on'] = member['createdOn']
+        parsed_member['fulfilled'] = member['fulfillmentStatus']
+        parsed_member['price_paid'] = member['grandTotal']['value']
+        parsed_member['discount_price'] = member['discountTotal']['value']
 
-                # family membership check
-                if nl_membership_type == member_types_list[0] or  nl_membership_type == member_types_list[5]:
-                    nl_secondary_name = y['customizations'][6]['value']
-                    nl_secondary_email = y['customizations'][7]['value']
-                # partner membership check
-                elif nl_membership_type == member_types_list[1] or nl_membership_type == member_types_list[6]:
-                    nl_secondary_name = y['customizations'][5]['value']
-                    nl_secondary_email = y['customizations'][6]['value']
-                # all other membership types
-                else:
-                    nl_secondary_name = ""
-                    nl_secondary_email = ""
+        for line_item in member['lineItems']:
+            # Check if they bought a membership
+            if line_item['productName'] in member_types_list:
+                parsed_member['membership_type'] = line_item['productName']
 
-                # emritus and junior do not have a renewal type radio button
-                if nl_membership_type == member_types_list[3] or nl_membership_type == member_types_list[4] or nl_membership_type == member_types_list[8]:
-                    nl_renewal_type = ""
+                if line_item['customizations']:
+                    for index, customization in enumerate(line_item['customizations']):
+                        for item in customization:
+                            if customization['label'] == 'Confirm Membership Type':
+                                parsed_member['renewal'] = customization['value']
+                            elif customization['label'] == 'Primary Member Name':
+                                parsed_member['primary_member'] = customization['value']
+                            elif customization['label'] == 'Cell Phone':
+                                parsed_member['cell_phone'] = customization['value'].strip()
+                            elif customization['label'] == 'Primary Address':
+                                parsed_member['home_address'] = customization['value']
+                            elif customization['label'] == 'Secondary Member Name':
+                                parsed_member['secondary_member'] = customization['value']
+                            elif customization['label'] == 'Secondary Member Email':
+                                parsed_member['secondary_email'] = customization['value']
+                            elif customization['label'] == 'Emergency Contact Name':
+                                parsed_member['emergency_contact_name'] = customization['value']
+                            elif customization['label'] == 'Emergency Contact Phone':
+                                parsed_member['emergency_contact_phone'] = customization['value'].strip()
+                            elif (customization['label'] == 'Child Family Member #1'):
+                                parsed_member['child_member_1'] = {}
+                                parsed_member['child_member_1']['name'] = line_item['customizations'][index][item]
+                                parsed_member['child_member_1']['dob'] = line_item['customizations'][index+1][item]
+                            elif (customization['label'] == 'Child Family Member #2'):
+                                parsed_member['child_member_2'] = {}
+                                parsed_member['child_member_2']['name'] = line_item['customizations'][index][item]
+                                parsed_member['child_member_2']['dob'] = line_item['customizations'][index+1][item]
+                            elif (customization['label'] == 'Child Family Member #3'):
+                                parsed_member['child_member_3'] = {}
+                                parsed_member['child_member_3']['name'] = line_item['customizations'][index][item]
+                                parsed_member['child_member_3']['dob'] = line_item['customizations'][index+1][item]
+                            elif (customization['label'] == 'Child Family Member #4'):
+                                parsed_member['child_member_4'] = {}
+                                parsed_member['child_member_4']['name'] = line_item['customizations'][index][item]
+                                parsed_member['child_member_4']['dob'] = line_item['customizations'][index+1][item]
+            # Check if they bought a mooring
+            if line_item['productName'] in row_types_list:
+                parsed_member['boat_registration'] = {}
+                parsed_member['boat_registration']['mooring'] = line_item['productName']
+                parsed_member['boat_registration']['mooring_color'] = line_item['variantOptions'][0]['value']
 
-                # create a new line
-                new_line = [nl_renewal_type, nl_primary_name, nl_primary_email, nl_secondary_name, nl_secondary_email, nl_membership_type, nl_membership_price]
+                if line_item['customizations']:
+                    for index, customization in enumerate(line_item['customizations']):
+                        for item in customization:
+                            if customization['label'] == 'Type of Boat':
+                                parsed_member['boat_registration']['type_of_boat'] = customization['value']
+                            elif customization['label'] == 'Boat Color':
+                                parsed_member['boat_registration']['boat_color'] = customization['value']
+                            elif customization['label'] == 'Town Boat Permit #':
+                                parsed_member['boat_registration']['town_permit_no'] = customization['value']
 
-                # add the new line to our new_members list
-                new_members.append(new_line)
-    
-    # if there is an additional page of results, recursively iterate
-    if member_dict['pagination']['nextPageUrl'] != None:
-        new_members = get_members(new_members, member_dict['pagination']['nextPageUrl'], False)
+            # Check if they added mooring services
+            if line_item['productName'] == 'Mooring Services':
+                parsed_member['mooring_svcs'] = True
 
-    # return the new_members nested list
-    return new_members
+        parsed_memberlist.append(parsed_member)
 
-## main code begin ##
+    return parsed_memberlist
 
-def main(event, handler):
-    # definte variables
-    new_members = []
-    json_string = "https://api.squarespace.com/1.0/commerce/orders"
-
-    # call member function
-    new_members = get_members(new_members, json_string, True)
-
-    ## write new_members to google sheet ##
-
+def get_spreadsheet(spreadsheet_name):
     # define the scope
     scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
 
     # add credentials to the account
-    creds = ServiceAccountCredentials.from_json_keyfile_name('googleCreds.json', scope)
+    credentials = ServiceAccountCredentials.from_json_keyfile_name('googleCreds.json', scope)
 
-    # authorize the clientsheet 
-    client = gspread.authorize(creds)
+    # authorize the clientsheet
+    client = gspread.authorize(credentials)
 
     # get the instance of the Spreadsheet
-    spreadsheet = client.open('Membership Test')
+    return client.open(spreadsheet_name)
 
-    # grab date info (maybe move up)
-    todays_date = date.today()
+def update_spreadsheet(spreadsheet, member_list):
 
     # make a spreadsheet for the year if necessary
     # set the target_sheet for the sheet we'll be writing to
-    sheet_array = spreadsheet.worksheets()
-    sheet_found = False
+    worksheets = spreadsheet.worksheets()
 
-    for sheet in sheet_array:
-        if sheet.title == str(todays_date.year):
+    target_sheet = None
+    current_year = date.today().year
+
+    for sheet in worksheets:
+        if sheet.title == "Year %s" % current_year:
             target_sheet = sheet
-            sheet_found = True
-            break
 
-    if sheet_found == False:
-        target_sheet = spreadsheet.add_worksheet(str(todays_date.year), 1, 7, index=0)
-        target_sheet.append_row(['Renewal Type', 'Primary Name', 'Primary Email', 'Secondary Name', 'Secondary Email', 'Membership Type', 'Price'], value_input_option='USER-ENTERED', table_range='A1:B1')
-        # update sheet_array
-        sheet_array = spreadsheet.worksheets()
-        target_sheet = sheet_array[0]
+    # If sheet was not found create it
+    if not target_sheet:
+        target_sheet = spreadsheet.add_worksheet(title="Year %s" % current_year, rows=1, cols=30)
+        target_sheet.append_row([   'Primary Name',
+                                    'Primary Email',
+                                    'Secondary Name',
+                                    'Secondary Email',
+                                    'Membership Type',
+                                    'Renewal Type',
+                                    'Price',
+                                    'Discount',
+                                    'Home Address',
+                                    'Cell Phone',
+                                    'Emergency Contact',
+                                    'Emergency Phone',
+                                    'Child #1 Name',
+                                    'Child #1 DOB',
+                                    'Child #2 Name',
+                                    'Child #2 DOB',
+                                    'Child #3 Name',
+                                    'Child #3 DOB',
+                                    'Child #4 Name',
+                                    'Child #4 DOB',
+                                    'Mooring Location',
+                                    'Mooring Color',
+                                    'Mooring Services',
+                                    'Boat Type',
+                                    'Boat Color',
+                                    'Permit No',
+                                ], value_input_option='USER-ENTERED', table_range='A1:B1')
 
     # write to the google doc
     start_row = target_sheet.row_count + 1
-    target_sheet.append_rows(new_members, value_input_option='USER-ENTERED', table_range='A{}'.format(start_row))
-    target_sheet.columns_auto_resize(0, 7)
 
-    # check code finished
-    print('end')
+    new_members = []
+    for person in member_list:
+        formatted_person = [    person['name'],
+                                person['email'],
+                                person['secondary_member'] if 'secondary_member' in person.keys() else '',
+                                person['secondary_email'] if 'secondary_email' in person.keys() else '',
+                                person['membership_type']if 'membership_type' in person.keys() else '',
+                                person['renewal'] if 'renewal' in person.keys() else '',
+                                person['price_paid'] if 'price_paid' in person.keys() else '',
+                                person['discount_price'] if 'discount_price' in person.keys() else '',
+                                person['home_address'] if 'home_address' in person.keys() else '',
+                                person['cell_phone'] if 'cell_phone' in person.keys() else '',
+                                person['emergency_contact_name'] if 'emergency_contact_name' in person.keys() else '',
+                                person['emergency_contact_phone'] if 'emergency_contact_phone' in person.keys() else '',
+                                person['child_member_1']['name'] if 'child_member_1' in person.keys() else '',
+                                person['child_member_1']['dob'] if 'child_member_1' in person.keys() else '',
+                                person['child_member_2']['name'] if 'child_member_2' in person.keys() else '',
+                                person['child_member_2']['dob'] if 'child_member_2' in person.keys() else '',
+                                person['child_member_3']['name'] if 'child_member_3' in person.keys() else '',
+                                person['child_member_3']['dob'] if 'child_member_3' in person.keys() else '',
+                                person['child_member_4']['name'] if 'child_member_4' in person.keys() else '',
+                                person['child_member_4']['dob'] if 'child_member_4' in person.keys() else '',
+                                person['boat_registration']['mooring'] if 'boat_registration' in person.keys() else '',
+                                person['boat_registration']['mooring_color'] if 'boat_registration' in person.keys() else '',
+                                person['mooring_svcs'] if 'mooring_svcs' in person.keys() else '',
+                                person['boat_registration']['type_of_boat'] if 'boat_registration' in person.keys() else '',
+                                person['boat_registration']['boat_color'] if 'boat_registration' in person.keys() else '',
+                                person['boat_registration']['town_permit_no'] if 'boat_registration' in person.keys() else '',
+                            ]
+
+        new_members.append(formatted_person)
+
+    target_sheet.append_rows(new_members, value_input_option='USER-ENTERED', table_range='A{}'.format(start_row))
+    target_sheet.columns_auto_resize(0, 30)
+
+    return True
+
+def update_customer_db(database, member_list):
+
+    return
+
+## main code begin ##
+
+def handler(event, context):
+    # definte variables
+    orders_api_endpoint = "https://api.squarespace.com/1.0/commerce/orders"
+    scheduled_sync_days = 1
+    syc_spreadsheet = 'Brent Testing'
+
+    # Added tests for environment variables
+    if os.environ.get('SQUARESPACE_API_KEY') is None:
+        print("Failed to pass SQUARESPACE_API_KEY")
+        return 1
+
+    # define JSON parameters
+    parameters = {
+        "modifiedAfter": (datetime.now() - timedelta(days=scheduled_sync_days)).isoformat() + 'Z',
+        "modifiedBefore": datetime.now().isoformat() + 'Z',
+        "fulfillmentStatus": "FULFILLED"
+    }
+
+    # Initiate the call to get_members which will iterate on pagination
+    try:
+        raw_members = get_members(orders_api_endpoint, parameters)
+    except requests.exceptions.HTTPError as error:
+        print("Failed to get new members: %s" % error)
+        return 1
+
+    if raw_members:
+        scrubbed_members = parse_members(raw_members)
+    else:
+        print("No new members since %s day(s) ago" % scheduled_sync_days)
+        return 0
+
+    # get the spreadsheet handler
+    gs = get_spreadsheet(syc_spreadsheet)
+
+    ## write new_members to google sheet ##
+    try:
+        update_spreadsheet(gs, scrubbed_members)
+    except Exception as e:
+        print("Failure updating Google Sheets: %s" % e)
+        return 1
+
     return 0
+
+if __name__ == "__main__":
+    return_val = 1
+    try:
+        return_val = handler(None, None)
+    except KeyboardInterrupt:
+        print("Caught a control-C. Bailing out")
+
+    sys.exit(return_val)
