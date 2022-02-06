@@ -16,10 +16,6 @@ filter_type_members = [
                         'Individual Membership',
                         'Emeritus Membership',
                         'Junior Membership',
-                        '2022 Family Membership',
-                        '2022 Partner Membership',
-                        '2022 Individual Membership',
-                        '2022 Junior Membership',
                     ]
 
 filter_type_moorings = [
@@ -201,7 +197,8 @@ def parse_orders(unparsed_orders, filter_types):
 
         for line_item in member['lineItems']:
             # Check if they bought a membership
-            if line_item['productName'] in filter_type_members:
+            # Year may be updated, check to see if suffix matches a member filter type
+            if line_item['productName'].endswith(tuple(filter_type_members)):
                 parsed_order['membership_type'] = line_item['productName']
 
                 if line_item['customizations']:
@@ -254,7 +251,7 @@ def parse_orders(unparsed_orders, filter_types):
             if line_item['productName'] in filter_type_mooring_svcs:
                 parsed_order['mooring_svcs'] = 'yes'
 
-            if line_item['productName'] in filter_types:
+            if line_item['productName'].endswith(tuple(filter_types)):
                 add_member_to_list = True
 
         if add_member_to_list:
@@ -320,7 +317,7 @@ def sync_memberships(orders_in_json):
     formatted_orders = []
     parsed_orders = parse_orders(orders_in_json, filter_type_members)
     for order in parsed_orders:
-        formatted_order = [ 
+        formatted_order = [
                             order['order_no'],
                             order['name'],
                             order['email'],
