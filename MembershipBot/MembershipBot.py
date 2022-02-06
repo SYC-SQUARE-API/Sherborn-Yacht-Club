@@ -89,6 +89,7 @@ spreadsheet_header_orders = [
                         'Secondary Email',
                         'Membership Type',
                         'Renewal Type',
+                        'Fulfillment',
                         'Price',
                         'Discount',
                         'Home Address',
@@ -192,6 +193,7 @@ def parse_orders(unparsed_orders, filter_types):
         parsed_order['home_address'] = street_address + ", " + member['billingAddress']['city'] + ", " + member['billingAddress']['state'] + " " + member['billingAddress']['postalCode']
 
         parsed_order['year'] = parsedate.isoparse(member['modifiedOn']).year
+        parsed_order['fulfillment'] = member['fulfillmentStatus']
         parsed_order['price_paid'] = member['grandTotal']['value']
         parsed_order['price_discount'] = member['discountTotal']['value']
 
@@ -433,6 +435,7 @@ def sync_orders(orders_in_json):
                             order['secondary_email'],
                             order['membership_type'],
                             order['renewal'],
+                            order['fulfillment'],
                             order['price_paid'],
                             order['price_discount'],
                             order['home_address'],
@@ -482,7 +485,6 @@ def main():
     request_parameters = {
         "modifiedAfter": beginning_of_year,
         "modifiedBefore": datetime.now().isoformat() + 'Z',
-        "fulfillmentStatus": "FULFILLED"
     }
 
     # Initiate the call to get_orders which will iterate on pagination
