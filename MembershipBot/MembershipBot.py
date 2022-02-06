@@ -492,7 +492,7 @@ def main():
         orders_in_json = get_orders(orders_api_endpoint, request_parameters)
 
         if not orders_in_json:
-            print("No new members since %s day(s) ago" % scheduled_sync_days)
+            print("No new orders since the beginning of the year")
             return 0
 
     except requests.exceptions.HTTPError as error:
