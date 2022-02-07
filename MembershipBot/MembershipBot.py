@@ -112,10 +112,36 @@ spreadsheet_header_orders = [
                         'Mooring Services',
                     ]
 
+spreadsheet_header_transactions = [
+                        'Order Id',
+                        'Customer Email',
+                        'Paid On',
+                        'Total',
+                        'Tax',
+                        'Processing Fees',
+                        'Total Net Payment',
+                        'Discounts',
+                        'Credit Card Type',
+                        'Provider',
+                        'Voided',
+                        'Payment Error',
+                    ]
+
+admin_email_accts = [
+                        'commodore@sherbornyachtclub.org',
+                        'info@sherbornyachtclub.org',
+                        'instruction@sherbornyachtclub.org',
+                        'brent.holden@gmail.com',
+                    ]
+
+waterfront_email_accts = [
+                        'waterfront@sherbornyachtclub.org',
+                        ]
+
 ## function to get a nested list of all orders from squarespace
 ## returns: dictionary of orders from json result
-def get_items(api_endpoint, parameters):
-    order_list = []
+def get_items(api_endpoint, json_return, parameters):
+    item_list = []
     commerce_creds = os.environ.get('SQUARESPACE_API_KEY')
 
     # define JSON headers, API key pulled from environment variable SQUARESPACE_API_KEY
@@ -131,16 +157,16 @@ def get_items(api_endpoint, parameters):
         json_data = response.json()
 
     if response.status_code == requests.codes.ok:
-        for member in json_data['result']:
-            order_list.append(member)
+        for item in json_data[json_return]:
+            item_list.append(item)
 
         if json_data['pagination']['hasNextPage']:
-            return (order_list + get_items(json_data['pagination']['nextPageUrl'], None))
+            return (item_list + get_items(json_data['pagination']['nextPageUrl'], json_return, None))
     else:
         print("Return status was NOT OK: %s" % response.status_code)
         return False
 
-    return order_list
+    return item_list
 
 def parse_orders(unparsed_orders, filter_types):
     parsed_orderlist = []
@@ -148,7 +174,8 @@ def parse_orders(unparsed_orders, filter_types):
     # iterate through every lineItem, which corresponds to an order in the system
     # we further select by only finding orders which correspond to memberships
     for member in unparsed_orders:
-        parsed_order = {    'order_no': '',
+        parsed_order = {
+                            'order_no': '',
                             'name': '',
                             'email': '',
                             'secondary_name': '',
@@ -261,7 +288,63 @@ def parse_orders(unparsed_orders, filter_types):
 
     return parsed_orderlist
 
-def get_spreadsheet(spreadsheet_title):
+def parse_transactions(unparsed_transactions):
+    parsed_tx_list = []
+
+    for tx in unparsed_transactions:
+        parsed_transaction = {
+                            'order_id': '',
+                            'email': '',
+                            'voided': '',
+                            'total': '',
+                            'total_tax': '',
+                            'total_netpayment': '',
+                            'discounts': '',
+                            'payments_error': '',
+                            'payments_creditcard': '',
+                            'payments_provider': '',
+                            'payments_processing_fees': '',
+                            'payments_paidon': '',
+                            }
+
+        parsed_transaction['order_id'] = tx['salesOrderId']
+        parsed_transaction['email'] = tx['customerEmail']
+        parsed_transaction['total'] = float(tx['total']['value'])
+        parsed_transaction['total_tax'] = float(tx['totalTaxes']['value'])
+        parsed_transaction['total_netpayment'] = float(tx['totalNetPayment']['value'])
+
+        if tx['voided']:
+            parsed_transaction['voided'] = 'Yes'
+        else:
+            parsed_transaction['voided'] = 'No'
+
+        if tx['paymentGatewayError']:
+            parsed_transaction['payments_error'] = tx['paymentGatewayError']
+
+        try:
+            parsed_transaction['discounts'] = float(tx['discounts'][0]['amount']['value'])
+        except IndexError:
+            pass
+
+        try:
+            parsed_transaction['payments_creditcard'] = tx['payments'][0]['creditCardType']
+            parsed_transaction['payments_provider'] = tx['payments'][0]['provider']
+            parsed_transaction['payments_paidon'] = parsedate.isoparse(tx['payments'][0]['paidOn']).ctime()
+
+            fees = 0
+            for fee in tx['payments'][0]['processingFees']:
+                fees = fees + float(fee['amount']['value'])
+            parsed_transaction['payments_processing_fees'] = fees
+
+        except IndexError:
+            pass
+
+        parsed_tx_list.append(parsed_transaction)
+
+    return parsed_tx_list
+
+def get_spreadsheet(spreadsheet_title, addtl_share_perms=[], notify_users=False):
+
     # define the scope
     scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
 
@@ -275,9 +358,15 @@ def get_spreadsheet(spreadsheet_title):
     try:
         handler = client.open(spreadsheet_title)
     except SpreadsheetNotFound:
+        # only notify users if we had to create a new sheet
+        notify_users = True
         handler = client.create(spreadsheet_title)
 
-    print("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
+    #print("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
+
+    email_perms = admin_email_accts + addtl_share_perms
+    for email in email_perms:
+        handler.share(email, perm_type='user', role='reader', notify=notify_users)
 
     return handler
 
@@ -346,7 +435,7 @@ def sync_memberships(orders_in_json, year):
         return 0
 
     # get the spreadsheet handler
-    gs = get_spreadsheet(spreadsheet_title)
+    gs = get_spreadsheet(spreadsheet_title, waterfront_email_accts)
 
     # update the google sheet
     # check for column 1 for non-duplicate entries
@@ -393,7 +482,7 @@ def sync_moorings(orders_in_json, year):
         return 0
 
     # get the spreadsheet handler
-    gs = get_spreadsheet(spreadsheet_title)
+    gs = get_spreadsheet(spreadsheet_title, waterfront_email_accts)
 
     # update the google sheet
     try:
@@ -468,6 +557,45 @@ def sync_orders(orders_in_json, year):
 
     return 0
 
+def sync_transactions(transacts_in_json, year):
+
+    spreadsheet_title = 'SYC Transactions'
+    worksheet_title = "Year %s" % year
+    spreadsheet_header = spreadsheet_header_transactions
+
+    formatted_transacts = []
+    parsed_transacts = parse_transactions(transacts_in_json)
+
+    for tx in parsed_transacts:
+        formatted_tx = [
+                            tx['order_id'],
+                            tx['email'],
+                            tx['payments_paidon'],
+                            tx['total'],
+                            tx['total_tax'],
+                            tx['payments_processing_fees'],
+                            tx['total_netpayment'],
+                            tx['discounts'],
+                            tx['payments_creditcard'],
+                            tx['payments_provider'],
+                            tx['voided'],
+                            tx['payments_error'],
+                        ]
+        formatted_transacts.append(formatted_tx)
+
+    # get the spreadsheet handler
+    gs = get_spreadsheet(spreadsheet_title)
+
+    # update the google sheet
+    # check for column 1 for non-duplicate entries
+    try:
+        update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_transacts)
+    except Exception as e:
+        print("Failure updating google sheets: %s" % e)
+        return 1
+
+    return 0
+
 def main():
     # Added tests for environment variables
     if os.environ.get('SQUARESPACE_API_KEY') is None:
@@ -475,6 +603,7 @@ def main():
         return 1
 
     orders_api_endpoint = "https://api.squarespace.com/1.0/commerce/orders"
+    transactions_api_endpoint = "https://api.squarespace.com/1.0/commerce/transactions"
 
     year = datetime.now().year
     # Process the current year by default. Uncomment below and comment above to get information for previous years
@@ -490,8 +619,10 @@ def main():
     }
 
     # Initiate the call to get_items which will iterate on pagination
+    # the json result will be of result type
     try:
-        orders_in_json = get_items(orders_api_endpoint, request_parameters)
+        json_var = 'result'
+        orders_in_json = get_items(orders_api_endpoint, json_var, request_parameters)
 
         if not orders_in_json:
             print("No new orders since the beginning of the year")
@@ -509,6 +640,22 @@ def main():
 
     # Sync moorings
     sync_moorings(orders_in_json, year)
+
+    # Get all transactions for specified year
+    # the json result will be of documents type
+    try:
+        json_var = 'documents'
+        transactions_in_json = get_items(transactions_api_endpoint, json_var, request_parameters)
+        if not transactions_in_json:
+            print("No transactions since the beginning of the year")
+            return 0
+
+    except requests.exceptions.HTTPError as error:
+        print("Failed to get new members: %s" % error)
+        return 1
+
+    # Sync transactions
+    sync_transactions(transactions_in_json, year)
 
     return 0
 
