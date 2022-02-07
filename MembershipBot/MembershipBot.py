@@ -512,6 +512,9 @@ def main():
 
     return 0
 
+def handler(event, context):
+    return main()
+
 if __name__ == "__main__":
     return_val = 1
     try:
