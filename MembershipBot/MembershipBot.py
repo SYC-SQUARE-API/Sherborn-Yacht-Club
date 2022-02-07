@@ -35,12 +35,6 @@ filter_type_mooring_svcs = [
                         ]
 
 filter_type_moorings_all = filter_type_moorings + filter_type_mooring_svcs
-
-filter_type_lessons = [
-                        'Sailing Morning',
-                        'Sailing Afternoon',
-                    ]
-
 filter_type_orders = filter_type_members + filter_type_moorings
 
 spreadsheet_header_members = [
@@ -74,11 +68,6 @@ spreadsheet_header_moorings = [
                         'Boat Type',
                         'Boat Color',
                         'Town Permit No',
-                    ]
-
-spreadsheet_header_lessons = [
-                        'Order No',
-                        'Created On',
                     ]
 
 spreadsheet_header_orders = [
@@ -277,7 +266,7 @@ def parse_orders(unparsed_orders, filter_types):
                                 parsed_order['town_permit_no'] = customization['value']
 
             if line_item['productName'] in filter_type_mooring_svcs:
-                parsed_order['mooring_svcs'] = 'yes'
+                parsed_order['mooring_svcs'] = 'Yes'
 
             if line_item['productName'].endswith(tuple(filter_types)):
                 add_member_to_list = True
@@ -489,16 +478,6 @@ def sync_moorings(orders_in_json, year):
     except Exception as e:
         print("failure updating google sheets: %s" % e)
         return 1
-
-    return 0
-
-def sync_lessons(orders_in_json, year):
-
-    spreadsheet_title = "SYC - Year %s" % year
-    worksheet_title = 'Lessons'
-    spreadsheet_header = spreadsheet_header_lessons
-
-    # TODO: Add poll/webhook for sailing lessons
 
     return 0
 
