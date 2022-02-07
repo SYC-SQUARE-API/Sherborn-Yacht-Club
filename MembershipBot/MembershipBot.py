@@ -114,7 +114,7 @@ spreadsheet_header_orders = [
 
 ## function to get a nested list of all orders from squarespace
 ## returns: dictionary of orders from json result
-def get_orders(orders_api_endpoint, parameters):
+def get_items(api_endpoint, parameters):
     order_list = []
     commerce_creds = os.environ.get('SQUARESPACE_API_KEY')
 
@@ -124,7 +124,7 @@ def get_orders(orders_api_endpoint, parameters):
         "User-Agent": "MembershipBot"
     }
 
-    response = requests.get(orders_api_endpoint, headers=headers, params=parameters)
+    response = requests.get(api_endpoint, headers=headers, params=parameters)
     if response.raise_for_status():
         pass
     else:
@@ -135,7 +135,7 @@ def get_orders(orders_api_endpoint, parameters):
             order_list.append(member)
 
         if json_data['pagination']['hasNextPage']:
-            return (order_list + get_orders(json_data['pagination']['nextPageUrl'], None))
+            return (order_list + get_items(json_data['pagination']['nextPageUrl'], None))
     else:
         print("Return status was NOT OK: %s" % response.status_code)
         return False
@@ -489,9 +489,9 @@ def main():
         "modifiedBefore": year_end,
     }
 
-    # Initiate the call to get_orders which will iterate on pagination
+    # Initiate the call to get_items which will iterate on pagination
     try:
-        orders_in_json = get_orders(orders_api_endpoint, request_parameters)
+        orders_in_json = get_items(orders_api_endpoint, request_parameters)
 
         if not orders_in_json:
             print("No new orders since the beginning of the year")
