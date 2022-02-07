@@ -277,6 +277,8 @@ def get_spreadsheet(spreadsheet_title):
     except SpreadsheetNotFound:
         handler = client.create(spreadsheet_title)
 
+    print("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
+
     return handler
 
 def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
@@ -294,7 +296,6 @@ def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
     if not target_sheet:
         target_sheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1, cols=len(rows_to_add[0]))
 
-
     target_sheet.clear()
     target_sheet.resize(rows=1)
     target_sheet.append_row(header_row, value_input_option='USER-ENTERED', table_range='A1:B1')
@@ -309,8 +310,7 @@ def update_customer_db(database, member_list):
 
     return 0
 
-def sync_memberships(orders_in_json):
-    year = datetime.now().year
+def sync_memberships(orders_in_json, year):
 
     spreadsheet_title = "SYC - Year %s" % year
     worksheet_title = 'Memberships'
@@ -358,8 +358,7 @@ def sync_memberships(orders_in_json):
 
     return 0
 
-def sync_moorings(orders_in_json):
-    year = datetime.now().year
+def sync_moorings(orders_in_json, year):
 
     spreadsheet_title = "SYC - Year %s" % year
     worksheet_title = 'Moorings'
@@ -397,7 +396,6 @@ def sync_moorings(orders_in_json):
     gs = get_spreadsheet(spreadsheet_title)
 
     # update the google sheet
-    # check for column 1 for non-duplicate entries
     try:
         update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_orders)
     except Exception as e:
@@ -406,8 +404,7 @@ def sync_moorings(orders_in_json):
 
     return 0
 
-def sync_lessons(orders_in_json):
-    year = datetime.now().year
+def sync_lessons(orders_in_json, year):
 
     spreadsheet_title = "SYC - Year %s" % year
     worksheet_title = 'Lessons'
@@ -417,8 +414,7 @@ def sync_lessons(orders_in_json):
 
     return 0
 
-def sync_orders(orders_in_json):
-    year = datetime.now().year
+def sync_orders(orders_in_json, year):
 
     spreadsheet_title = 'SYC Orders'
     worksheet_title = "Year %s" % year
@@ -479,12 +475,18 @@ def main():
         return 1
 
     orders_api_endpoint = "https://api.squarespace.com/1.0/commerce/orders"
-    beginning_of_year = date(datetime.today().year, 1, 1).isoformat()+ 'T00:00:00.0Z'
+
+    year = datetime.now().year
+    # Process the current year by default. Uncomment below and comment above to get information for previous years
+    #year = 2021
+
+    year_beginning = date(year, 1, 1).isoformat()+ 'T00:00:00.0Z'
+    year_end = date(year, 12, 30).isoformat()+ 'T00:00:00.0Z'
 
     # define JSON parameters for the date range to get orders
     request_parameters = {
-        "modifiedAfter": beginning_of_year,
-        "modifiedBefore": datetime.now().isoformat() + 'Z',
+        "modifiedAfter": year_beginning,
+        "modifiedBefore": year_end,
     }
 
     # Initiate the call to get_orders which will iterate on pagination
@@ -500,13 +502,13 @@ def main():
         return 1
 
     # Sync orders
-    sync_orders(orders_in_json)
+    sync_orders(orders_in_json, year)
 
     # Sync memberships
-    sync_memberships(orders_in_json)
+    sync_memberships(orders_in_json, year)
 
     # Sync moorings
-    sync_moorings(orders_in_json)
+    sync_moorings(orders_in_json, year)
 
     return 0
 
