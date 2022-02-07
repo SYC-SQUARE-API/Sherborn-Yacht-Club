@@ -131,7 +131,6 @@ admin_email_accts = [
                         'commodore@sherbornyachtclub.org',
                         'info@sherbornyachtclub.org',
                         'instruction@sherbornyachtclub.org',
-                        'brent.holden@gmail.com',
                     ]
 
 waterfront_email_accts = [
