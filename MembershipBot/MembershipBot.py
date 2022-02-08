@@ -5,7 +5,7 @@ import sys
 import gspread
 from gspread.exceptions import *
 import requests
-#from importlib import reload
+from requests.auth import HTTPBasicAuth
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, datetime, timedelta
 from dateutil import parser as parsedate
@@ -35,12 +35,6 @@ filter_type_mooring_svcs = [
                         ]
 
 filter_type_moorings_all = filter_type_moorings + filter_type_mooring_svcs
-
-filter_type_lessons = [
-                        'Sailing Morning',
-                        'Sailing Afternoon',
-                    ]
-
 filter_type_orders = filter_type_members + filter_type_moorings
 
 spreadsheet_header_members = [
@@ -52,6 +46,7 @@ spreadsheet_header_members = [
                         'Membership Type',
                         'Renewal Type',
                         'Home Address',
+                        'Home Phone',
                         'Cell Phone',
                         'Emergency Contact',
                         'Emergency Phone',
@@ -63,22 +58,21 @@ spreadsheet_header_members = [
                         'Child #3 DOB',
                         'Child #4 Name',
                         'Child #4 DOB',
+                        'Child #5 Name',
+                        'Child #5 DOB',
                     ]
 
 spreadsheet_header_moorings = [
                         'Order No',
                         'Name',
                         'Email',
-                        'Mooring Location',
-                        'Mooring Color',
+                        'Phone',
+                        'Row',
+                        'Color / Position',
                         'Boat Type',
                         'Boat Color',
                         'Town Permit No',
-                    ]
-
-spreadsheet_header_lessons = [
-                        'Order No',
-                        'Created On',
+                        'Services',
                     ]
 
 spreadsheet_header_orders = [
@@ -93,6 +87,7 @@ spreadsheet_header_orders = [
                         'Price',
                         'Discount',
                         'Home Address',
+                        'Home Phone',
                         'Cell Phone',
                         'Emergency Contact',
                         'Emergency Phone',
@@ -104,6 +99,8 @@ spreadsheet_header_orders = [
                         'Child #3 DOB',
                         'Child #4 Name',
                         'Child #4 DOB',
+                        'Child #5 Name',
+                        'Child #5 DOB',
                         'Mooring Location',
                         'Mooring Color',
                         'Boat Type',
@@ -112,15 +109,56 @@ spreadsheet_header_orders = [
                         'Mooring Services',
                     ]
 
+spreadsheet_header_transactions = [
+                        'Order Id',
+                        'Customer Email',
+                        'Paid On',
+                        'Total',
+                        'Tax',
+                        'Processing Fees',
+                        'Total Net Payment',
+                        'Discounts',
+                        'Credit Card Type',
+                        'Provider',
+                        'Voided',
+                        'Payment Error',
+                    ]
+
+spreadsheet_header_reservations = [
+                        'Name',
+                        'Email',
+                        'Phone',
+                        'Date',
+                        'Time In',
+                        'Time Out',
+                        'Reserved On',
+                        'Type',
+                        'Category',
+                        'Canceled',
+                        'Checked-In',
+                        'Payment Error',
+                        'Price',
+                    ]
+
+admin_email_accts = [
+                        'commodore@sherbornyachtclub.org',
+                        'info@sherbornyachtclub.org',
+                        'instruction@sherbornyachtclub.org',
+                    ]
+
+waterfront_email_accts = [
+                        'waterfront@sherbornyachtclub.org',
+                        ]
+
 ## function to get a nested list of all orders from squarespace
 ## returns: dictionary of orders from json result
-def get_items(api_endpoint, parameters):
-    order_list = []
+def get_squarespace_items(api_endpoint, json_return, parameters):
+    item_list = []
     commerce_creds = os.environ.get('SQUARESPACE_API_KEY')
 
     # define JSON headers, API key pulled from environment variable SQUARESPACE_API_KEY
     headers = {
-        "Authorization": "Bearer " + os.environ.get('SQUARESPACE_API_KEY'),
+        "Authorization": "Bearer " + commerce_creds,
         "User-Agent": "MembershipBot"
     }
 
@@ -131,24 +169,25 @@ def get_items(api_endpoint, parameters):
         json_data = response.json()
 
     if response.status_code == requests.codes.ok:
-        for member in json_data['result']:
-            order_list.append(member)
+        for item in json_data[json_return]:
+            item_list.append(item)
 
         if json_data['pagination']['hasNextPage']:
-            return (order_list + get_items(json_data['pagination']['nextPageUrl'], None))
+            return (item_list + get_squarespace_items(json_data['pagination']['nextPageUrl'], json_return, None))
     else:
         print("Return status was NOT OK: %s" % response.status_code)
         return False
 
-    return order_list
+    return item_list
 
-def parse_orders(unparsed_orders, filter_types):
+def parse_squarespace_orders(unparsed_orders, filter_types):
     parsed_orderlist = []
 
     # iterate through every lineItem, which corresponds to an order in the system
     # we further select by only finding orders which correspond to memberships
     for member in unparsed_orders:
-        parsed_order = {    'order_no': '',
+        parsed_order = {
+                            'order_no': '',
                             'name': '',
                             'email': '',
                             'secondary_name': '',
@@ -158,6 +197,7 @@ def parse_orders(unparsed_orders, filter_types):
                             'price_paid': '',
                             'price_discount': '',
                             'home_address': '',
+                            'home_phone': '',
                             'cell_phone': '',
                             'emergency_contact_name': '',
                             'emergency_contact_phone': '',
@@ -169,12 +209,14 @@ def parse_orders(unparsed_orders, filter_types):
                             'child_member_3_dob': '',
                             'child_member_4_name': '',
                             'child_member_4_dob': '',
+                            'child_member_5_name': '',
+                            'child_member_5_dob': '',
                             'mooring_location': '',
                             'mooring_color': '',
                             'boat_type': '',
                             'boat_color': '',
                             'town_permit_no': '',
-                            'mooring_svcs': 'no',
+                            'mooring_svcs': 'No',
                             'year': '',
                         }
 
@@ -208,6 +250,8 @@ def parse_orders(unparsed_orders, filter_types):
                         for item in customization:
                             if customization['label'] == 'Confirm Membership Type':
                                 parsed_order['renewal'] = customization['value']
+                            elif customization['label'] == 'Home Phone':
+                                parsed_order['home_phone'] = customization['value'].strip()
                             elif customization['label'] == 'Cell Phone':
                                 parsed_order['cell_phone'] = customization['value'].strip()
                             elif customization['label'] == 'Primary Address':
@@ -232,6 +276,9 @@ def parse_orders(unparsed_orders, filter_types):
                             elif (customization['label'] == 'Child Family Member #4'):
                                 parsed_order['child_member_4_name'] = line_item['customizations'][index][item]
                                 parsed_order['child_member_4_dob'] = line_item['customizations'][index+1][item]
+                            elif (customization['label'] == 'Child Family Member #5'):
+                                parsed_order['child_member_5_name'] = line_item['customizations'][index][item]
+                                parsed_order['child_member_5_dob'] = line_item['customizations'][index+1][item]
 
             # Check if they bought a mooring
             if line_item['productName'] in filter_type_moorings:
@@ -243,6 +290,8 @@ def parse_orders(unparsed_orders, filter_types):
                 if line_item['customizations']:
                     for index, customization in enumerate(line_item['customizations']):
                         for item in customization:
+                            if customization['label'] == 'Phone':
+                                parsed_order['home_phone'] = customization['value']
                             if customization['label'] == 'Type of Boat':
                                 parsed_order['boat_type'] = customization['value']
                             elif customization['label'] == 'Boat Color':
@@ -251,7 +300,7 @@ def parse_orders(unparsed_orders, filter_types):
                                 parsed_order['town_permit_no'] = customization['value']
 
             if line_item['productName'] in filter_type_mooring_svcs:
-                parsed_order['mooring_svcs'] = 'yes'
+                parsed_order['mooring_svcs'] = 'Yes'
 
             if line_item['productName'].endswith(tuple(filter_types)):
                 add_member_to_list = True
@@ -261,7 +310,63 @@ def parse_orders(unparsed_orders, filter_types):
 
     return parsed_orderlist
 
-def get_spreadsheet(spreadsheet_title):
+def parse_squarespace_transactions(unparsed_transactions):
+    parsed_tx_list = []
+
+    for tx in unparsed_transactions:
+        parsed_transaction = {
+                            'order_id': '',
+                            'email': '',
+                            'voided': '',
+                            'total': '',
+                            'total_tax': '',
+                            'total_netpayment': '',
+                            'discounts': '',
+                            'payments_error': '',
+                            'payments_creditcard': '',
+                            'payments_provider': '',
+                            'payments_processing_fees': '',
+                            'payments_paidon': '',
+                            }
+
+        parsed_transaction['order_id'] = tx['salesOrderId']
+        parsed_transaction['email'] = tx['customerEmail']
+        parsed_transaction['total'] = float(tx['total']['value'])
+        parsed_transaction['total_tax'] = float(tx['totalTaxes']['value'])
+        parsed_transaction['total_netpayment'] = float(tx['totalNetPayment']['value'])
+
+        if tx['voided']:
+            parsed_transaction['voided'] = 'Yes'
+        else:
+            parsed_transaction['voided'] = 'No'
+
+        if tx['paymentGatewayError']:
+            parsed_transaction['payments_error'] = tx['paymentGatewayError']
+
+        try:
+            parsed_transaction['discounts'] = float(tx['discounts'][0]['amount']['value'])
+        except IndexError:
+            pass
+
+        try:
+            parsed_transaction['payments_creditcard'] = tx['payments'][0]['creditCardType']
+            parsed_transaction['payments_provider'] = tx['payments'][0]['provider']
+            parsed_transaction['payments_paidon'] = parsedate.isoparse(tx['payments'][0]['paidOn']).ctime()
+
+            fees = 0
+            for fee in tx['payments'][0]['processingFees']:
+                fees = fees + float(fee['amount']['value'])
+            parsed_transaction['payments_processing_fees'] = fees
+
+        except IndexError:
+            pass
+
+        parsed_tx_list.append(parsed_transaction)
+
+    return parsed_tx_list
+
+def get_spreadsheet(spreadsheet_title, addtl_share_perms=[], notify_users=False):
+
     # define the scope
     scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
 
@@ -275,9 +380,15 @@ def get_spreadsheet(spreadsheet_title):
     try:
         handler = client.open(spreadsheet_title)
     except SpreadsheetNotFound:
+        # only notify users if we had to create a new sheet
+        notify_users = True
         handler = client.create(spreadsheet_title)
 
-    print("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
+    #print("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
+
+    email_perms = admin_email_accts + addtl_share_perms
+    for email in email_perms:
+        handler.share(email, perm_type='user', role='reader', notify=notify_users)
 
     return handler
 
@@ -306,18 +417,14 @@ def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
 
     return True
 
-def update_customer_db(database, member_list):
-
-    return 0
-
 def sync_memberships(orders_in_json, year):
 
-    spreadsheet_title = "SYC - Year %s" % year
+    spreadsheet_title = "SYC Waterfront - Year %s" % year
     worksheet_title = 'Memberships'
     spreadsheet_header = spreadsheet_header_members
 
     formatted_orders = []
-    parsed_orders = parse_orders(orders_in_json, filter_type_members)
+    parsed_orders = parse_squarespace_orders(orders_in_json, filter_type_members)
     for order in parsed_orders:
         formatted_order = [
                             order['order_no'],
@@ -328,6 +435,7 @@ def sync_memberships(orders_in_json, year):
                             order['membership_type'],
                             order['renewal'],
                             order['home_address'],
+                            order['home_phone'],
                             order['cell_phone'],
                             order['emergency_contact_name'],
                             order['emergency_contact_phone'],
@@ -339,6 +447,8 @@ def sync_memberships(orders_in_json, year):
                             order['child_member_3_dob'],
                             order['child_member_4_name'],
                             order['child_member_4_dob'],
+                            order['child_member_5_name'],
+                            order['child_member_5_dob'],
                             ]
         formatted_orders.append(formatted_order)
 
@@ -346,7 +456,7 @@ def sync_memberships(orders_in_json, year):
         return 0
 
     # get the spreadsheet handler
-    gs = get_spreadsheet(spreadsheet_title)
+    gs = get_spreadsheet(spreadsheet_title, waterfront_email_accts)
 
     # update the google sheet
     # check for column 1 for non-duplicate entries
@@ -360,17 +470,18 @@ def sync_memberships(orders_in_json, year):
 
 def sync_moorings(orders_in_json, year):
 
-    spreadsheet_title = "SYC - Year %s" % year
+    spreadsheet_title = "SYC Waterfront - Year %s" % year
     worksheet_title = 'Moorings'
     spreadsheet_header = spreadsheet_header_moorings
 
     formatted_orders = []
-    parsed_orders = parse_orders(orders_in_json, filter_type_moorings_all)
+    parsed_orders = parse_squarespace_orders(orders_in_json, filter_type_moorings_all)
     for order in parsed_orders:
         formatted_order = [
                             order['order_no'],
                             order['name'],
                             order['email'],
+                            order['home_phone'],
                             order['mooring_location'],
                             order['mooring_color'],
                             order['boat_type'],
@@ -393,7 +504,7 @@ def sync_moorings(orders_in_json, year):
         return 0
 
     # get the spreadsheet handler
-    gs = get_spreadsheet(spreadsheet_title)
+    gs = get_spreadsheet(spreadsheet_title, waterfront_email_accts)
 
     # update the google sheet
     try:
@@ -404,16 +515,6 @@ def sync_moorings(orders_in_json, year):
 
     return 0
 
-def sync_lessons(orders_in_json, year):
-
-    spreadsheet_title = "SYC - Year %s" % year
-    worksheet_title = 'Lessons'
-    spreadsheet_header = spreadsheet_header_lessons
-
-    # TODO: Add poll/webhook for sailing lessons
-
-    return 0
-
 def sync_orders(orders_in_json, year):
 
     spreadsheet_title = 'SYC Orders'
@@ -421,7 +522,7 @@ def sync_orders(orders_in_json, year):
     spreadsheet_header = spreadsheet_header_orders
 
     formatted_orders = []
-    parsed_orders = parse_orders(orders_in_json, filter_type_orders)
+    parsed_orders = parse_squarespace_orders(orders_in_json, filter_type_orders)
     for order in parsed_orders:
         formatted_order = [
                             order['order_no'],
@@ -435,6 +536,7 @@ def sync_orders(orders_in_json, year):
                             order['price_paid'],
                             order['price_discount'],
                             order['home_address'],
+                            order['home_phone'],
                             order['cell_phone'],
                             order['emergency_contact_name'],
                             order['emergency_contact_phone'],
@@ -446,6 +548,8 @@ def sync_orders(orders_in_json, year):
                             order['child_member_3_dob'],
                             order['child_member_4_name'],
                             order['child_member_4_dob'],
+                            order['child_member_5_name'],
+                            order['child_member_5_dob'],
                             order['mooring_location'],
                             order['mooring_color'],
                             order['boat_type'],
@@ -468,6 +572,44 @@ def sync_orders(orders_in_json, year):
 
     return 0
 
+def sync_squarespace_transactions(transacts_in_json, spreadsheet_title, year):
+
+    worksheet_title = "Year %s" % year
+    spreadsheet_header = spreadsheet_header_transactions
+
+    formatted_transacts = []
+    parsed_transacts = parse_squarespace_transactions(transacts_in_json)
+
+    for tx in parsed_transacts:
+        formatted_tx = [
+                            tx['order_id'],
+                            tx['email'],
+                            tx['payments_paidon'],
+                            tx['total'],
+                            tx['total_tax'],
+                            tx['payments_processing_fees'],
+                            tx['total_netpayment'],
+                            tx['discounts'],
+                            tx['payments_creditcard'],
+                            tx['payments_provider'],
+                            tx['voided'],
+                            tx['payments_error'],
+                        ]
+        formatted_transacts.append(formatted_tx)
+
+    # get the spreadsheet handler
+    gs = get_spreadsheet(spreadsheet_title)
+
+    # update the google sheet
+    # check for column 1 for non-duplicate entries
+    try:
+        update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_transacts)
+    except Exception as e:
+        print("Failure updating google sheets: %s" % e)
+        return 1
+
+    return 0
+
 def main():
     # Added tests for environment variables
     if os.environ.get('SQUARESPACE_API_KEY') is None:
@@ -475,9 +617,10 @@ def main():
         return 1
 
     orders_api_endpoint = "https://api.squarespace.com/1.0/commerce/orders"
+    transactions_api_endpoint = "https://api.squarespace.com/1.0/commerce/transactions"
 
+    # Process the current year by default. Uncomment below to get information for previous years
     year = datetime.now().year
-    # Process the current year by default. Uncomment below and comment above to get information for previous years
     #year = 2021
 
     year_beginning = date(year, 1, 1).isoformat()+ 'T00:00:00.0Z'
@@ -489,9 +632,12 @@ def main():
         "modifiedBefore": year_end,
     }
 
-    # Initiate the call to get_items which will iterate on pagination
+    # Initiate the call to get_squarespace_items which will iterate on pagination
+    # the json result will be of result type
+    # This applies to Squarespace API requests only
     try:
-        orders_in_json = get_items(orders_api_endpoint, request_parameters)
+        json_var = 'result'
+        orders_in_json = get_squarespace_items(orders_api_endpoint, json_var, request_parameters)
 
         if not orders_in_json:
             print("No new orders since the beginning of the year")
@@ -509,6 +655,23 @@ def main():
 
     # Sync moorings
     sync_moorings(orders_in_json, year)
+
+    # Get all transactions for specified year
+    # the json result will be of documents type
+    try:
+        json_var = 'documents'
+        transactions_in_json = get_squarespace_items(transactions_api_endpoint, json_var, request_parameters)
+        if not transactions_in_json:
+            print("No transactions since the beginning of the year")
+            return 0
+
+    except requests.exceptions.HTTPError as error:
+        print("Failed to get new members: %s" % error)
+        return 1
+
+    # Sync transactions
+    title = 'SYC Transactions'
+    sync_squarespace_transactions(transactions_in_json, title, year)
 
     return 0
 
