@@ -5,7 +5,7 @@ import sys
 import gspread
 from gspread.exceptions import *
 import requests
-#from importlib import reload
+from requests.auth import HTTPBasicAuth
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, datetime, timedelta
 from dateutil import parser as parsedate
@@ -116,6 +116,22 @@ spreadsheet_header_transactions = [
                         'Payment Error',
                     ]
 
+spreadsheet_header_reservations = [
+                        'Name',
+                        'Email',
+                        'Phone',
+                        'Date',
+                        'Time In',
+                        'Time Out',
+                        'Reserved On',
+                        'Type',
+                        'Category',
+                        'Canceled',
+                        'Checked-In',
+                        'Payment Error',
+                        'Price',
+                    ]
+
 admin_email_accts = [
                         'commodore@sherbornyachtclub.org',
                         'info@sherbornyachtclub.org',
@@ -126,9 +142,22 @@ waterfront_email_accts = [
                         'waterfront@sherbornyachtclub.org',
                         ]
 
+def get_acuity_items(api_endpoint, parameters):
+    item_list = []
+    schedule_user = os.environ.get('ACUITY_API_USER')
+    schedule_key = os.environ.get('ACUITY_API_KEY')
+
+    # define JSON headers, API key pulled from environment variable ACUITY_API_KEY
+    headers = {
+        "Authorization": "Bearer " + schedule_creds,
+        "User-Agent": "MembershipBot"
+    }
+
+    return
+
 ## function to get a nested list of all orders from squarespace
 ## returns: dictionary of orders from json result
-def get_items(api_endpoint, json_return, parameters):
+def get_squarespace_items(api_endpoint, json_return, parameters):
     item_list = []
     commerce_creds = os.environ.get('SQUARESPACE_API_KEY')
 
@@ -149,7 +178,7 @@ def get_items(api_endpoint, json_return, parameters):
             item_list.append(item)
 
         if json_data['pagination']['hasNextPage']:
-            return (item_list + get_items(json_data['pagination']['nextPageUrl'], json_return, None))
+            return (item_list + get_squarespace_items(json_data['pagination']['nextPageUrl'], json_return, None))
     else:
         print("Return status was NOT OK: %s" % response.status_code)
         return False
@@ -580,8 +609,13 @@ def main():
         print("Failed to pass SQUARESPACE_API_KEY")
         return 1
 
+    if (os.environ.get('ACUITY_API_USER') is None) or (os.environ.get('ACUITY_API_KEY') is None):
+        print("Failed to pass either ACUITY_API_USER or ACUITY_API_KEY")
+        return 1
+
     orders_api_endpoint = "https://api.squarespace.com/1.0/commerce/orders"
     transactions_api_endpoint = "https://api.squarespace.com/1.0/commerce/transactions"
+    schedule_api_endpoint = "https://acuityscheduling.com/api/v1/appointments"
 
     year = datetime.now().year
     # Process the current year by default. Uncomment below and comment above to get information for previous years
@@ -596,11 +630,12 @@ def main():
         "modifiedBefore": year_end,
     }
 
-    # Initiate the call to get_items which will iterate on pagination
+    # Initiate the call to get_squarespace_items which will iterate on pagination
     # the json result will be of result type
+    # This applies to Squarespace API requests only
     try:
         json_var = 'result'
-        orders_in_json = get_items(orders_api_endpoint, json_var, request_parameters)
+        orders_in_json = get_squarespace_items(orders_api_endpoint, json_var, request_parameters)
 
         if not orders_in_json:
             print("No new orders since the beginning of the year")
@@ -623,7 +658,7 @@ def main():
     # the json result will be of documents type
     try:
         json_var = 'documents'
-        transactions_in_json = get_items(transactions_api_endpoint, json_var, request_parameters)
+        transactions_in_json = get_squarespace_items(transactions_api_endpoint, json_var, request_parameters)
         if not transactions_in_json:
             print("No transactions since the beginning of the year")
             return 0
