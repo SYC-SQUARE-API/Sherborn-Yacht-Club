@@ -633,9 +633,9 @@ def main():
         print("Failed to pass SQUARESPACE_API_KEY")
         return 1
 
-    if (os.environ.get('ACUITY_API_USER') is None) or (os.environ.get('ACUITY_API_KEY') is None):
-        print("Failed to pass either ACUITY_API_USER or ACUITY_API_KEY")
-        return 1
+    #if (os.environ.get('ACUITY_API_USER') is None) or (os.environ.get('ACUITY_API_KEY') is None):
+    #    print("Failed to pass either ACUITY_API_USER or ACUITY_API_KEY")
+    #    return 1
 
     orders_api_endpoint = "https://api.squarespace.com/1.0/commerce/orders"
     transactions_api_endpoint = "https://api.squarespace.com/1.0/commerce/transactions"
