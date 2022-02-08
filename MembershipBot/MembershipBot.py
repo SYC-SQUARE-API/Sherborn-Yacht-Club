@@ -150,19 +150,6 @@ waterfront_email_accts = [
                         'waterfront@sherbornyachtclub.org',
                         ]
 
-def get_acuity_items(api_endpoint, parameters):
-    item_list = []
-    schedule_user = os.environ.get('ACUITY_API_USER')
-    schedule_key = os.environ.get('ACUITY_API_KEY')
-
-    # define JSON headers, API key pulled from environment variable ACUITY_API_KEY
-    headers = {
-        "Authorization": "Bearer " + schedule_creds,
-        "User-Agent": "MembershipBot"
-    }
-
-    return
-
 ## function to get a nested list of all orders from squarespace
 ## returns: dictionary of orders from json result
 def get_squarespace_items(api_endpoint, json_return, parameters):
@@ -193,7 +180,7 @@ def get_squarespace_items(api_endpoint, json_return, parameters):
 
     return item_list
 
-def parse_orders(unparsed_orders, filter_types):
+def parse_squarespace_orders(unparsed_orders, filter_types):
     parsed_orderlist = []
 
     # iterate through every lineItem, which corresponds to an order in the system
@@ -323,7 +310,7 @@ def parse_orders(unparsed_orders, filter_types):
 
     return parsed_orderlist
 
-def parse_transactions(unparsed_transactions):
+def parse_squarespace_transactions(unparsed_transactions):
     parsed_tx_list = []
 
     for tx in unparsed_transactions:
@@ -430,10 +417,6 @@ def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
 
     return True
 
-def update_customer_db(database, member_list):
-
-    return 0
-
 def sync_memberships(orders_in_json, year):
 
     spreadsheet_title = "SYC Waterfront - Year %s" % year
@@ -441,7 +424,7 @@ def sync_memberships(orders_in_json, year):
     spreadsheet_header = spreadsheet_header_members
 
     formatted_orders = []
-    parsed_orders = parse_orders(orders_in_json, filter_type_members)
+    parsed_orders = parse_squarespace_orders(orders_in_json, filter_type_members)
     for order in parsed_orders:
         formatted_order = [
                             order['order_no'],
@@ -492,7 +475,7 @@ def sync_moorings(orders_in_json, year):
     spreadsheet_header = spreadsheet_header_moorings
 
     formatted_orders = []
-    parsed_orders = parse_orders(orders_in_json, filter_type_moorings_all)
+    parsed_orders = parse_squarespace_orders(orders_in_json, filter_type_moorings_all)
     for order in parsed_orders:
         formatted_order = [
                             order['order_no'],
@@ -539,7 +522,7 @@ def sync_orders(orders_in_json, year):
     spreadsheet_header = spreadsheet_header_orders
 
     formatted_orders = []
-    parsed_orders = parse_orders(orders_in_json, filter_type_orders)
+    parsed_orders = parse_squarespace_orders(orders_in_json, filter_type_orders)
     for order in parsed_orders:
         formatted_order = [
                             order['order_no'],
@@ -589,14 +572,13 @@ def sync_orders(orders_in_json, year):
 
     return 0
 
-def sync_transactions(transacts_in_json, year):
+def sync_squarespace_transactions(transacts_in_json, spreadsheet_title, year):
 
-    spreadsheet_title = 'SYC Transactions'
     worksheet_title = "Year %s" % year
     spreadsheet_header = spreadsheet_header_transactions
 
     formatted_transacts = []
-    parsed_transacts = parse_transactions(transacts_in_json)
+    parsed_transacts = parse_squarespace_transactions(transacts_in_json)
 
     for tx in parsed_transacts:
         formatted_tx = [
@@ -634,16 +616,11 @@ def main():
         print("Failed to pass SQUARESPACE_API_KEY")
         return 1
 
-    #if (os.environ.get('ACUITY_API_USER') is None) or (os.environ.get('ACUITY_API_KEY') is None):
-    #    print("Failed to pass either ACUITY_API_USER or ACUITY_API_KEY")
-    #    return 1
-
     orders_api_endpoint = "https://api.squarespace.com/1.0/commerce/orders"
     transactions_api_endpoint = "https://api.squarespace.com/1.0/commerce/transactions"
-    schedule_api_endpoint = "https://acuityscheduling.com/api/v1/appointments"
 
+    # Process the current year by default. Uncomment below to get information for previous years
     year = datetime.now().year
-    # Process the current year by default. Uncomment below and comment above to get information for previous years
     #year = 2021
 
     year_beginning = date(year, 1, 1).isoformat()+ 'T00:00:00.0Z'
@@ -693,7 +670,8 @@ def main():
         return 1
 
     # Sync transactions
-    sync_transactions(transactions_in_json, year)
+    title = 'SYC Transactions'
+    sync_squarespace_transactions(transactions_in_json, title, year)
 
     return 0
 
