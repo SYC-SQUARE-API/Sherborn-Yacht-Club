@@ -66,8 +66,7 @@ spreadsheet_header_moorings = [
                         'Order No',
                         'Name',
                         'Email',
-                        'Home Phone',
-                        'Cell Phone',
+                        'Phone',
                         'Mooring Location',
                         'Mooring Color',
                         'Boat Type',
@@ -229,7 +228,7 @@ def parse_orders(unparsed_orders, filter_types):
                             'boat_type': '',
                             'boat_color': '',
                             'town_permit_no': '',
-                            'mooring_svcs': 'no',
+                            'mooring_svcs': 'No',
                             'year': '',
                         }
 
@@ -303,6 +302,8 @@ def parse_orders(unparsed_orders, filter_types):
                 if line_item['customizations']:
                     for index, customization in enumerate(line_item['customizations']):
                         for item in customization:
+                            if customization['label'] == 'Phone':
+                                parsed_order['home_phone'] = customization['value']
                             if customization['label'] == 'Type of Boat':
                                 parsed_order['boat_type'] = customization['value']
                             elif customization['label'] == 'Boat Color':
@@ -434,7 +435,7 @@ def update_customer_db(database, member_list):
 
 def sync_memberships(orders_in_json, year):
 
-    spreadsheet_title = "SYC - Year %s" % year
+    spreadsheet_title = "SYC Waterfront - Year %s" % year
     worksheet_title = 'Memberships'
     spreadsheet_header = spreadsheet_header_members
 
@@ -485,7 +486,7 @@ def sync_memberships(orders_in_json, year):
 
 def sync_moorings(orders_in_json, year):
 
-    spreadsheet_title = "SYC - Year %s" % year
+    spreadsheet_title = "SYC Waterfront - Year %s" % year
     worksheet_title = 'Moorings'
     spreadsheet_header = spreadsheet_header_moorings
 
@@ -497,7 +498,6 @@ def sync_moorings(orders_in_json, year):
                             order['name'],
                             order['email'],
                             order['home_phone'],
-                            order['cell_phone'],
                             order['mooring_location'],
                             order['mooring_color'],
                             order['boat_type'],
