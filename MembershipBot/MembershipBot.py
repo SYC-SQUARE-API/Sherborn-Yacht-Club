@@ -46,6 +46,7 @@ spreadsheet_header_members = [
                         'Membership Type',
                         'Renewal Type',
                         'Home Address',
+                        'Home Phone',
                         'Cell Phone',
                         'Emergency Contact',
                         'Emergency Phone',
@@ -57,12 +58,16 @@ spreadsheet_header_members = [
                         'Child #3 DOB',
                         'Child #4 Name',
                         'Child #4 DOB',
+                        'Child #5 Name',
+                        'Child #5 DOB',
                     ]
 
 spreadsheet_header_moorings = [
                         'Order No',
                         'Name',
                         'Email',
+                        'Home Phone',
+                        'Cell Phone',
                         'Mooring Location',
                         'Mooring Color',
                         'Boat Type',
@@ -82,6 +87,7 @@ spreadsheet_header_orders = [
                         'Price',
                         'Discount',
                         'Home Address',
+                        'Home Phone',
                         'Cell Phone',
                         'Emergency Contact',
                         'Emergency Phone',
@@ -93,6 +99,8 @@ spreadsheet_header_orders = [
                         'Child #3 DOB',
                         'Child #4 Name',
                         'Child #4 DOB',
+                        'Child #5 Name',
+                        'Child #5 DOB',
                         'Mooring Location',
                         'Mooring Color',
                         'Boat Type',
@@ -202,6 +210,7 @@ def parse_orders(unparsed_orders, filter_types):
                             'price_paid': '',
                             'price_discount': '',
                             'home_address': '',
+                            'home_phone': '',
                             'cell_phone': '',
                             'emergency_contact_name': '',
                             'emergency_contact_phone': '',
@@ -213,6 +222,8 @@ def parse_orders(unparsed_orders, filter_types):
                             'child_member_3_dob': '',
                             'child_member_4_name': '',
                             'child_member_4_dob': '',
+                            'child_member_5_name': '',
+                            'child_member_5_dob': '',
                             'mooring_location': '',
                             'mooring_color': '',
                             'boat_type': '',
@@ -252,6 +263,8 @@ def parse_orders(unparsed_orders, filter_types):
                         for item in customization:
                             if customization['label'] == 'Confirm Membership Type':
                                 parsed_order['renewal'] = customization['value']
+                            elif customization['label'] == 'Home Phone':
+                                parsed_order['home_phone'] = customization['value'].strip()
                             elif customization['label'] == 'Cell Phone':
                                 parsed_order['cell_phone'] = customization['value'].strip()
                             elif customization['label'] == 'Primary Address':
@@ -276,6 +289,9 @@ def parse_orders(unparsed_orders, filter_types):
                             elif (customization['label'] == 'Child Family Member #4'):
                                 parsed_order['child_member_4_name'] = line_item['customizations'][index][item]
                                 parsed_order['child_member_4_dob'] = line_item['customizations'][index+1][item]
+                            elif (customization['label'] == 'Child Family Member #5'):
+                                parsed_order['child_member_5_name'] = line_item['customizations'][index][item]
+                                parsed_order['child_member_5_dob'] = line_item['customizations'][index+1][item]
 
             # Check if they bought a mooring
             if line_item['productName'] in filter_type_moorings:
@@ -434,6 +450,7 @@ def sync_memberships(orders_in_json, year):
                             order['membership_type'],
                             order['renewal'],
                             order['home_address'],
+                            order['home_phone'],
                             order['cell_phone'],
                             order['emergency_contact_name'],
                             order['emergency_contact_phone'],
@@ -445,6 +462,8 @@ def sync_memberships(orders_in_json, year):
                             order['child_member_3_dob'],
                             order['child_member_4_name'],
                             order['child_member_4_dob'],
+                            order['child_member_5_name'],
+                            order['child_member_5_dob'],
                             ]
         formatted_orders.append(formatted_order)
 
@@ -477,6 +496,8 @@ def sync_moorings(orders_in_json, year):
                             order['order_no'],
                             order['name'],
                             order['email'],
+                            order['home_phone'],
+                            order['cell_phone'],
                             order['mooring_location'],
                             order['mooring_color'],
                             order['boat_type'],
@@ -531,6 +552,7 @@ def sync_orders(orders_in_json, year):
                             order['price_paid'],
                             order['price_discount'],
                             order['home_address'],
+                            order['home_phone'],
                             order['cell_phone'],
                             order['emergency_contact_name'],
                             order['emergency_contact_phone'],
@@ -542,6 +564,8 @@ def sync_orders(orders_in_json, year):
                             order['child_member_3_dob'],
                             order['child_member_4_name'],
                             order['child_member_4_dob'],
+                            order['child_member_5_name'],
+                            order['child_member_5_dob'],
                             order['mooring_location'],
                             order['mooring_color'],
                             order['boat_type'],
