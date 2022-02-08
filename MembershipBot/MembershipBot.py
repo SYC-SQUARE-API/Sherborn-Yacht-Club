@@ -135,7 +135,7 @@ spreadsheet_header_stripe_transactions = [
                         'Total Net Payment',
                         'Category',
                         'Type',
-                        'Stripe Charge Id',
+                        'Stripe Source Id',
                     ]
 
 spreadsheet_header_reservations = [
