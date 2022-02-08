@@ -134,7 +134,7 @@ def get_items(api_endpoint, json_return, parameters):
 
     # define JSON headers, API key pulled from environment variable SQUARESPACE_API_KEY
     headers = {
-        "Authorization": "Bearer " + os.environ.get('SQUARESPACE_API_KEY'),
+        "Authorization": "Bearer " + commerce_creds,
         "User-Agent": "MembershipBot"
     }
 
