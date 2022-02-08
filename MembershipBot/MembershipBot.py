@@ -67,11 +67,12 @@ spreadsheet_header_moorings = [
                         'Name',
                         'Email',
                         'Phone',
-                        'Mooring Location',
-                        'Mooring Color',
+                        'Row',
+                        'Color / Position',
                         'Boat Type',
                         'Boat Color',
                         'Town Permit No',
+                        'Services',
                     ]
 
 spreadsheet_header_orders = [
