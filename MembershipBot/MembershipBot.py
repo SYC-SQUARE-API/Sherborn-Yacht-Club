@@ -138,22 +138,6 @@ spreadsheet_header_stripe_transactions = [
                         'Stripe Source Id',
                     ]
 
-spreadsheet_header_reservations = [
-                        'Name',
-                        'Email',
-                        'Phone',
-                        'Date',
-                        'Time In',
-                        'Time Out',
-                        'Reserved On',
-                        'Type',
-                        'Category',
-                        'Canceled',
-                        'Checked-In',
-                        'Payment Error',
-                        'Price',
-                    ]
-
 admin_email_accts = [
                         'commodore@sherbornyachtclub.org',
                         'info@sherbornyachtclub.org',
