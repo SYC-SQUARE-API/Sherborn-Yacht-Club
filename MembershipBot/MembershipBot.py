@@ -62,6 +62,7 @@ spreadsheet_header_members = [
                         'Child #4 DOB',
                         'Child #5 Name',
                         'Child #5 DOB',
+                        'Child Photo Approved',
                     ]
 
 spreadsheet_header_moorings = [
@@ -103,6 +104,7 @@ spreadsheet_header_orders = [
                         'Child #4 DOB',
                         'Child #5 Name',
                         'Child #5 DOB',
+                        'Child Photo Approved',
                         'Mooring Location',
                         'Mooring Color',
                         'Boat Type',
@@ -267,6 +269,7 @@ def parse_squarespace_orders(unparsed_orders, filter_types):
                             'child_member_4_dob': '',
                             'child_member_5_name': '',
                             'child_member_5_dob': '',
+                            'photo_ok': '',
                             'mooring_location': '',
                             'mooring_color': '',
                             'boat_type': '',
@@ -281,6 +284,9 @@ def parse_squarespace_orders(unparsed_orders, filter_types):
         parsed_order['order_no'] = member['orderNumber']
         parsed_order['name'] = member['billingAddress']['firstName'] + " " + member['billingAddress']['lastName']
         parsed_order['email'] = member['customerEmail']
+
+        # Set a default for photo_ok which will be changed on family plans
+        parsed_order['photo_ok'] = 'Not Applicable'
 
         # Figure out the home address
         try:
@@ -335,6 +341,11 @@ def parse_squarespace_orders(unparsed_orders, filter_types):
                             elif (customization['label'] == 'Child Family Member #5'):
                                 parsed_order['child_member_5_name'] = line_item['customizations'][index][item]
                                 parsed_order['child_member_5_dob'] = line_item['customizations'][index+1][item]
+                            elif (customization['label'] == 'SYC Photography'):
+                                if customization['value'] == "SYC may publish my child's photo.":
+                                    parsed_order['photo_ok'] = 'Yes'
+                                else:
+                                    parsed_order['photo_ok'] = 'No'
 
             # Check if they bought a mooring
             if line_item['productName'] in filter_type_moorings:
@@ -532,6 +543,7 @@ def sync_memberships(orders_in_json, year):
                             order['child_member_4_dob'],
                             order['child_member_5_name'],
                             order['child_member_5_dob'],
+                            order['photo_ok'],
                             ]
         formatted_orders.append(formatted_order)
 
@@ -633,6 +645,7 @@ def sync_orders(orders_in_json, year):
                             order['child_member_4_dob'],
                             order['child_member_5_name'],
                             order['child_member_5_dob'],
+                            order['photo_ok'],
                             order['mooring_location'],
                             order['mooring_color'],
                             order['boat_type'],
