@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+
 import os
 import sys
+import logging
 import requests
 import gspread
 import stripe
@@ -167,12 +169,13 @@ def get_spreadsheet(spreadsheet_title, addtl_share_perms=[], notify_users=False)
         notify_users = True
         handler = client.create(spreadsheet_title)
 
-    #print("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
+    logging.info("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
 
     email_perms = admin_email_accts + addtl_share_perms
     for email in email_perms:
         handler.share(email, perm_type='user', role='reader', notify=notify_users)
 
+    logging.debug("Found spreadsheet and returning handler")
     return handler
 
 def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
@@ -184,10 +187,12 @@ def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
     target_sheet = None
     for sheet in worksheets:
         if sheet.title == worksheet_title:
+            logging.debug("Found target_sheet: %s" % target_sheet)
             target_sheet = sheet
 
     # If sheet was not found create it
     if not target_sheet:
+        logging.debug("Added worksheet: %s" % worksheet_title)
         target_sheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1, cols=len(rows_to_add[0]))
 
     target_sheet.clear()
@@ -225,9 +230,10 @@ def get_squarespace_items(api_endpoint, json_return, parameters):
         if json_data['pagination']['hasNextPage']:
             return (item_list + get_squarespace_items(json_data['pagination']['nextPageUrl'], json_return, None))
     else:
-        print("Return status was NOT OK: %s" % response.status_code)
+        logging.error("Return status from response was requests.get was NOT OK: %s" % response.status_code)
         return False
 
+    logging.debug("Got item_list from get_squarespace_items of: %s" % item_list)
     return item_list
 
 def parse_squarespace_orders(unparsed_orders, filter_types):
@@ -358,6 +364,7 @@ def parse_squarespace_orders(unparsed_orders, filter_types):
         if add_member_to_list:
             parsed_orderlist.append(parsed_order)
 
+    logging.debug("Returning parsed_orderlist from parse_squarespace_orders: %s" % parsed_orderlist)
     return parsed_orderlist
 
 def parse_squarespace_transactions(unparsed_transactions):
@@ -415,6 +422,7 @@ def parse_squarespace_transactions(unparsed_transactions):
 
         parsed_tx_list.append(parsed_transaction)
 
+    logging.debug("Returning parsed_tx_list from parse_squarespace_transactions: %s" % parsed_tx_list)
     return parsed_tx_list
 
 def parse_stripe_transactions(unparsed_transactions, year):
@@ -454,6 +462,7 @@ def parse_stripe_transactions(unparsed_transactions, year):
         if (datetime.fromtimestamp(tx['created']).year) == year:
             parsed_tx_list.append(parsed_transaction)
 
+    logging.debug("Returning parsed_tx_list from parse_stripe_transactions: %s" % parsed_tx_list)
     return parsed_tx_list
 
 def sync_stripe_transactions(transacts_in_json, year):
@@ -487,7 +496,7 @@ def sync_stripe_transactions(transacts_in_json, year):
     try:
         update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_transacts)
     except Exception as e:
-        print("Failure updating google sheets: %s" % e)
+        logging.error("Failure updating google sheets: %s" % e)
         return 1
 
     return 0
@@ -535,9 +544,10 @@ def sync_memberships(orders_in_json, year):
     # update the google sheet
     # check for column 1 for non-duplicate entries
     try:
+        logging.debug("Writing out to memberships spreadsheet: %s" % formatted_orders)
         update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_orders)
     except Exception as e:
-        print("failure updating google sheets: %s" % e)
+        logging.error("Failure updating google sheets: %s" % e)
         return 1
 
     return 0
@@ -581,9 +591,10 @@ def sync_moorings(orders_in_json, year):
 
     # update the google sheet
     try:
+        logging.debug("Writing out to mooring spreadsheet: %s" % formatted_orders)
         update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_orders)
     except Exception as e:
-        print("failure updating google sheets: %s" % e)
+        logging.error("Failure updating google sheets: %s" % e)
         return 1
 
     return 0
@@ -637,9 +648,10 @@ def sync_orders(orders_in_json, year):
     # update the google sheet
     # check for column 1 for non-duplicate entries
     try:
+        logging.debug("Writing out to squarespace orders spreadsheet: %s" % formatted_orders)
         update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_orders)
     except Exception as e:
-        print("failure updating google sheets: %s" % e)
+        logging.error("Failure updating google sheets: %s" % e)
         return 1
 
     return 0
@@ -676,11 +688,13 @@ def sync_squarespace_transactions(transacts_in_json, year):
     # update the google sheet
     # check for column 1 for non-duplicate entries
     try:
+        logging.debug("Writing out to squarespace transactions spreadsheet: %s" % formatted_transacts)
         update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_transacts)
     except Exception as e:
-        print("Failure updating google sheets: %s" % e)
+        logging.error("Failure updating google sheets: %s" % e)
         return 1
 
+    logging.info("Finished writing out squarespace transactions")
     return 0
 
 def sync_squarespace(year):
@@ -704,21 +718,24 @@ def sync_squarespace(year):
         orders = get_squarespace_items(orders_api_endpoint, json_var, request_parameters)
 
         if not orders:
-            print("No new orders since the beginning of the year")
+            logging.info("No new orders since the beginning of the year. Moving on")
             return 0
 
     except requests.exceptions.HTTPError as error:
-        print("Failed to get new members: %s" % error)
+        logging.error("Failed to get new members: %s" % error)
         return 1
 
     # Sync orders
     sync_orders(orders, year)
+    logging.info("Finished writing out Squarespace orders report")
 
     # Sync memberships
     sync_memberships(orders, year)
+    logging.info("Finished writing out Squarespace memberships report")
 
     # Sync moorings
     sync_moorings(orders, year)
+    logging.info("Finished writing out Squarespace moorings report")
 
     # Get all transactions for specified year
     # the json result will be of documents type
@@ -726,15 +743,16 @@ def sync_squarespace(year):
         json_var = 'documents'
         transactions = get_squarespace_items(transactions_api_endpoint, json_var, request_parameters)
         if not transactions:
-            print("No transactions since the beginning of the year")
+            logging.warning("No transactions since the beginning of the year")
             return 0
 
     except requests.exceptions.HTTPError as error:
-        print("Failed to get new members: %s" % error)
+        logging.error("Failed to get new members: %s" % error)
         return 1
 
     # Sync transactions
     sync_squarespace_transactions(transactions, year)
+    logging.info("Finished writing out Squarespace transactions report")
 
     return 0
 
@@ -747,22 +765,27 @@ def sync_stripe(year):
             transactions.append(tx)
 
     if not transactions:
-        print("No transactions since the beginning of the year")
+        logging.info("No transactions since the beginning of the year")
         return 0
 
+    logging.debug("Stripe transactions found: %s" % transactions)
     sync_stripe_transactions(transactions, year)
+    logging.info("Finished writing out Stripe transactions report")
 
     return 0
 
 def main():
     # Added tests for environment variables
     if os.environ.get('SQUARESPACE_API_KEY') is None:
-        print("Failed to pass SQUARESPACE_API_KEY")
+        logging.critical("Failed to pass SQUARESPACE_API_KEY. Exiting")
         return 1
 
     if os.environ.get('STRIPE_API_KEY') is None:
-        print("Failed to pass STRIPE_API_KEY")
+        logging.critical("Failed to pass STRIPE_API_KEY. Exiting")
         return 1
+
+    LOGLEVEL = os.environ.get('LOGLEVEL', 'INFO').upper()
+    logging.basicConfig(level=LOGLEVEL)
 
     # Process the current year by default. Uncomment below to get information for previous years
     year = datetime.now().year
@@ -782,6 +805,6 @@ if __name__ == "__main__":
     try:
         return_val = main()
     except KeyboardInterrupt:
-        print("Caught a control-C. Bailing out")
+        logging.critical("Caught a control-C. Bailing out")
 
     sys.exit(return_val)
