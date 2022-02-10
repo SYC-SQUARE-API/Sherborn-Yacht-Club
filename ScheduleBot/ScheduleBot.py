@@ -323,11 +323,16 @@ def main(event, context):
         logging.critical("Failed to pass either ACUITY_API_USER or ACUITY_API_KEY. Exiting")
         return 1
 
+    appointment = {}
     parsed_event = parse_lambda_event(event)
     try:
         appointment = get_appointment_by_id(parsed_event['id'])
     except requests.exceptions.HTTPError as e:
         logging.critical("Got error from requests call: %s" % e)
+        return 1
+
+    if not appointment:
+        logging.critical("Got no response from Acuity. Was the id correct?")
         return 1
 
     logging.debug("appointment['forms'] is %s" % appointment['forms'])
@@ -342,6 +347,7 @@ def main(event, context):
         sync_lesson_race(appointment)
         sync_lesson_transaction(appointment)
 
+    logging.info("Finished")
     return 0
 
 def handler(event, context):
