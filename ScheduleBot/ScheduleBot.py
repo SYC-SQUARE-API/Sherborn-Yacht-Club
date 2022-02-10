@@ -36,18 +36,21 @@ spreadsheet_header_waterfront_reservations = [
                     ]
 
 spreadsheet_header_lesson_transactions = [
-                        'Txn Id',
+                        'Order Id',
                         'Name',
                         'Email',
-                        'Paid On',
-                        'Total',
-                        'Processing Fees',
-                        'Total Net Payment',
+                        'Phone',
+                        'Order Placed',
+                        'List Price',
+                        'Amount Paid',
+                        'Paid',
+                        'Member Status',
                     ]
 
 admin_email_accts = [
                         'commodore@sherbornyachtclub.org',
                         'info@sherbornyachtclub.org',
+                        'brent.holden@gmail.com',
                     ]
 
 waterfront_email_accts = [
@@ -80,7 +83,7 @@ def get_spreadsheet(spreadsheet_title, addtl_share_perms=[], notify_users=False)
     for email in email_perms:
         handler.share(email, perm_type='user', role='writer', notify=notify_users)
 
-    logging.debug("Found spreadsheet and returning handler")
+    logging.debug("Found spreadsheet and returning handler to caller")
     return handler
 
 def append_row_to_spreadsheet(spreadsheet, worksheet_title, header_row, row_to_add):
@@ -104,7 +107,7 @@ def append_row_to_spreadsheet(spreadsheet, worksheet_title, header_row, row_to_a
         target_sheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1, cols=len(row_to_add))
         target_sheet.append_row(header_row, value_input_option='USER-ENTERED')
     else:
-        logging.info("Found target_sheet: %s" % target_sheet)
+        logging.debug("Found target_sheet: %s" % target_sheet)
 
     logging.debug("Ready to append_row: %s" % row_to_add)
     start_row = 1
@@ -142,10 +145,10 @@ def get_appointment_by_id(id):
     return appointment
 
 def sync_lesson_race(appointment):
+    logging.debug("Entering sync_lesson_race")
 
     year = parsedate.isoparse(appointment['datetime']).year
     logging.debug("Year in sync_lesson_race was: %s" % year)
-
 
     spreadsheet_title = "SYC Sailing Lessons and Races - %s" % year
     spreadsheet_header = spreadsheet_header_waterfront_lessons
@@ -181,7 +184,7 @@ def sync_lesson_race(appointment):
     logging.debug("Ready to write out row: %s" % formatted_appt)
     # update the google sheet
     try:
-        logging.debug("Writing out to mooring spreadsheet: %s" % formatted_appt)
+        logging.debug("Writing out to lessons spreadsheet: %s" % formatted_appt)
         logging.debug("Spreadsheet info: Spreadsheet Title: %s, Worksheet Title: %s, Header: %s, Row to Append: %s" % (spreadsheet_title, worksheet_title, spreadsheet_header, formatted_appt))
         append_row_to_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_appt)
     except Exception as e:
@@ -189,6 +192,76 @@ def sync_lesson_race(appointment):
         return 1
 
     return 0
+
+def sync_lesson_transaction(appointment):
+    logging.debug("Entering sync_lesson_transaction")
+
+    year = parsedate.isoparse(appointment['datetime']).year
+    logging.debug("Year in sync_lesson_transaction was: %s" % year)
+
+    spreadsheet_title = "SYC Lessons and Races Transactions - %s" % year
+    spreadsheet_header = spreadsheet_header_lesson_transactions
+    logging.debug("Ready to write out header: %s" % spreadsheet_header)
+
+    unscrubbed_worksheet_title = appointment['type']
+    logging.debug("Worksheet title before sanitization was: %s" % unscrubbed_worksheet_title)
+
+    worksheet_title = (re.sub(r"\W+|_", " ", unscrubbed_worksheet_title))
+    logging.debug("Worksheet title after sanitization was: %s" % worksheet_title)
+
+    try:
+        members_spreadsheet = get_spreadsheet("SYC Waterfront - Year %s" % year)
+        if members_spreadsheet is None:
+            raise SpreadsheetNotFoundError
+        members_worksheet = 'Memberships'
+        membership = 'Non-Member'
+
+        worksheets = members_spreadsheet.worksheets()
+
+        for sheet in worksheets:
+            if sheet.title == members_worksheet:
+                logging.debug("FOUND membership sheet: %s" % sheet)
+
+                if sheet.findall(appointment['email']):
+                    membership = 'Member'
+                    logging.info("Found %s in membership spreadsheet for" % appointment['email'])
+                else:
+                    logging.info("Didn't find %s in membership spreadsheet for" % appointment['email'])
+            else:
+                logging.debug("DID NOT FIND membership sheet: %s" % sheet)
+
+    except SpreadsheetNotFoundError:
+        logging.warning("Couldn't open up membership spreadsheet for membership verification")
+
+    formatted_appt = [
+                        appointment['id'],
+                        appointment['firstName'] + " " + appointment['lastName'],
+                        appointment['email'],
+                        appointment['phone'],
+                        appointment['date'],
+                        "$" + str(float(appointment['price'])),
+                        "$" + str(float(appointment['amountPaid'])),
+                        appointment['paid'],
+                        membership,
+                    ]
+
+    # get the spreadsheet handler
+    gs = get_spreadsheet(spreadsheet_title)
+    logging.debug("Got spreadsheet in sync_lesson_race")
+    logging.debug("Ready to write out header: %s" % spreadsheet_header)
+
+    logging.debug("Ready to write out row: %s" % formatted_appt)
+    # update the google sheet
+    try:
+        logging.debug("Writing out to lessons spreadsheet: %s" % formatted_appt)
+        logging.debug("Spreadsheet info: Spreadsheet Title: %s, Worksheet Title: %s, Header: %s, Row to Append: %s" % (spreadsheet_title, worksheet_title, spreadsheet_header, formatted_appt))
+        append_row_to_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_appt)
+    except Exception as e:
+        logging.error("Failure updating google sheets: %s" % e)
+        return 1
+
+    return 0
+
 def sync_reservation(appointment):
 
     year = parsedate.isoparse(appointment['datetime']).year
@@ -215,7 +288,7 @@ def sync_reservation(appointment):
 
     # update the google sheet
     try:
-        logging.debug("Writing out to mooring spreadsheet: %s" % formatted_appt)
+        logging.debug("Writing out to lessons spreadsheet: %s" % formatted_appt)
         logging.debug("Spreadsheet info: Spreadsheet Title: %s, Worksheet Title: %s, Header: %s, Row to Append: %s" % (spreadsheet_title, worksheet_title, spreadsheet_header, formatted_appt))
         append_row_to_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_appt)
     except Exception as e:
@@ -268,6 +341,7 @@ def main(event, context):
         logging.info("Found a calendar event with forms attached. Forwarding to lessons and races")
         # If there are forms attached, its either a race or a lesson
         sync_lesson_race(appointment)
+        sync_lesson_transaction(appointment)
 
     return 0
 
