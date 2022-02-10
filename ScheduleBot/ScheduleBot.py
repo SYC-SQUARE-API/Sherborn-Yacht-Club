@@ -146,14 +146,15 @@ def sync_lesson_race(appointment):
     year = parsedate.isoparse(appointment['datetime']).year
     logging.debug("Year in sync_lesson_race was: %s" % year)
 
+
+    spreadsheet_title = "SYC Sailing Lessons and Races - %s" % year
+    spreadsheet_header = spreadsheet_header_waterfront_lessons
+
     unscrubbed_worksheet_title = appointment['type']
     logging.debug("Worksheet title before sanitization was: %s" % unscrubbed_worksheet_title)
 
     worksheet_title = (re.sub(r"\W+|_", " ", unscrubbed_worksheet_title))
     logging.debug("Worksheet title after sanitization was: %s" % worksheet_title)
-
-    spreadsheet_title = "SYC Sailing Lessons and Races - %s" % year
-    spreadsheet_header = spreadsheet_header_waterfront_lessons
 
     formatted_appt = [
                         appointment['id'],
