@@ -100,7 +100,7 @@ def append_row_to_spreadsheet(spreadsheet, worksheet_title, header_row, row_to_a
 
     # If sheet was not found create it
     if target_sheet is None:
-        logging.warn("Couldn't find worksheet %s. Creating" % worksheet_title)
+        logging.warning("Couldn't find worksheet %s. Creating" % worksheet_title)
         target_sheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1, cols=len(row_to_add))
         target_sheet.append_row(header_row, value_input_option='USER-ENTERED')
     else:
