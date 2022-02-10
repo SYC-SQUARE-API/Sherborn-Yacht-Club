@@ -83,8 +83,8 @@ module "lambda_function_existing_package_s3" {
   description   = "Membership Bot"
   handler       = "MembershipBot.handler"
   runtime       = "python3.9"
-
   create_package      = false
+
   s3_existing_package = {
     bucket = module.s3-bucket.s3_bucket_id
     key    = "MembershipBot.zip"
@@ -92,6 +92,7 @@ module "lambda_function_existing_package_s3" {
 
   environment_variables = {
     SQUARESPACE_API_KEY = var.SQUARESPACE_API_KEY
+    STRIPE_API_KEY = var.STRIPE_API_KEY
   }
 
   timeout = 300
@@ -112,16 +113,54 @@ module "lambda_function_existing_package_s3" {
   }
 }
 
+module "lambda_function_schedule_bot" {
+  source = "terraform-aws-modules/lambda/aws"
+
+  function_name = "ScheduleBot"
+  description   = "Schedule Bot"
+  handler       = "ScheduleBot.handler"
+  runtime       = "python3.9"
+  create_package      = false
+
+  s3_existing_package = {
+    bucket = module.s3-bucket.s3_bucket_id
+    key    = "ScheduleBot.zip"
+  }
+
+  environment_variables = {
+    ACUITY_API_KEY = var.ACUITY_API_KEY
+    ACUITY_API_USER = var.ACUITY_API_USER
+  }
+
+  timeout = 300
+  
+  # api is made through the console for now, pass the arn
+  allowed_triggers = {
+    APIGateway = {
+      service  = "apigateway"
+      source_arn = var.api_gateway_arn
+    }
+  }
+
+  layers = [
+    module.lambda_layer_s3.lambda_layer_arn,
+  ]
+
+  tags = {
+    Terraform = "true"
+  }
+}
+
 module "lambda_layer_s3" {
   source = "terraform-aws-modules/lambda/aws"
 
   create_layer = true
 
   layer_name          = "MembershipBot-layer"
-  description         = "General layer for gspread and google auth"
+  description         = "General layer for gspread, google auth, stripe, and python-dateutil"
   compatible_runtimes = ["python3.9"]
-
   create_package      = false
+
   s3_existing_package = {
     bucket = module.s3-bucket.s3_bucket_id
     key    = "LambdaLayer.zip"
@@ -130,7 +169,6 @@ module "lambda_layer_s3" {
   store_on_s3 = true
   s3_bucket   = module.s3-bucket.s3_bucket_id
 }
-
 
 # define eventbridge cron job
 module "eventbridge" {
@@ -142,7 +180,7 @@ module "eventbridge" {
   rules = {
     crons = {
       description         = "Trigger for a Lambda"
-      schedule_expression = "cron(0 10 * * ? *)"
+      schedule_expression = "cron(0 * * * ? *)"
     }
   }
 
