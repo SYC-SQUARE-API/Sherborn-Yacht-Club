@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+
 import os
 import sys
-import gspread
-from gspread.exceptions import *
+import logging
 import requests
-from requests.auth import HTTPBasicAuth
+import gspread
+import stripe
+from gspread.exceptions import *
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import date, datetime, timedelta
 from dateutil import parser as parsedate
@@ -60,6 +62,7 @@ spreadsheet_header_members = [
                         'Child #4 DOB',
                         'Child #5 Name',
                         'Child #5 DOB',
+                        'Child Photo Approved',
                     ]
 
 spreadsheet_header_moorings = [
@@ -101,6 +104,7 @@ spreadsheet_header_orders = [
                         'Child #4 DOB',
                         'Child #5 Name',
                         'Child #5 DOB',
+                        'Child Photo Approved',
                         'Mooring Location',
                         'Mooring Color',
                         'Boat Type',
@@ -109,7 +113,7 @@ spreadsheet_header_orders = [
                         'Mooring Services',
                     ]
 
-spreadsheet_header_transactions = [
+spreadsheet_header_squarespace_transactions = [
                         'Order Id',
                         'Customer Email',
                         'Paid On',
@@ -120,24 +124,22 @@ spreadsheet_header_transactions = [
                         'Discounts',
                         'Credit Card Type',
                         'Provider',
+                        'Stripe Charge Id',
                         'Voided',
                         'Payment Error',
                     ]
 
-spreadsheet_header_reservations = [
-                        'Name',
-                        'Email',
-                        'Phone',
-                        'Date',
-                        'Time In',
-                        'Time Out',
-                        'Reserved On',
-                        'Type',
+spreadsheet_header_stripe_transactions = [
+                        'Txn Id',
+                        'Customer Email',
+                        'Description',
+                        'Paid On',
+                        'Total',
+                        'Processing Fees',
+                        'Total Net Payment',
                         'Category',
-                        'Canceled',
-                        'Checked-In',
-                        'Payment Error',
-                        'Price',
+                        'Type',
+                        'Stripe Source Id',
                     ]
 
 admin_email_accts = [
@@ -149,6 +151,61 @@ admin_email_accts = [
 waterfront_email_accts = [
                         'waterfront@sherbornyachtclub.org',
                         ]
+
+def get_spreadsheet(spreadsheet_title, addtl_share_perms=[], notify_users=False):
+
+    # define the scope
+    scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
+
+    # add credentials to the account
+    credentials = ServiceAccountCredentials.from_json_keyfile_name('googleCreds.json', scope)
+
+    # authorize the clientsheet
+    client = gspread.authorize(credentials)
+
+    # get the instance of the Spreadsheet
+    try:
+        handler = client.open(spreadsheet_title)
+    except SpreadsheetNotFound:
+        # only notify users if we had to create a new sheet
+        notify_users = True
+        handler = client.create(spreadsheet_title)
+
+    logging.info("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
+
+    email_perms = admin_email_accts + addtl_share_perms
+    for email in email_perms:
+        handler.share(email, perm_type='user', role='reader', notify=notify_users)
+
+    logging.debug("Found spreadsheet and returning handler")
+    return handler
+
+def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
+
+    # make a spreadsheet for the year if necessary
+    # set the target_sheet for the sheet we'll be writing to
+    worksheets = spreadsheet.worksheets()
+
+    target_sheet = None
+    for sheet in worksheets:
+        if sheet.title == worksheet_title:
+            logging.debug("Found target_sheet: %s" % target_sheet)
+            target_sheet = sheet
+
+    # If sheet was not found create it
+    if not target_sheet:
+        logging.debug("Added worksheet: %s" % worksheet_title)
+        target_sheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1, cols=len(rows_to_add[0]))
+
+    target_sheet.clear()
+    target_sheet.resize(rows=1)
+    target_sheet.append_row(header_row, value_input_option='USER-ENTERED')
+
+    start_row = 1
+    target_sheet.append_rows(rows_to_add, value_input_option='USER-ENTERED', table_range='A{}'.format(start_row))
+    target_sheet.columns_auto_resize(0, len(rows_to_add[0]))
+
+    return True
 
 ## function to get a nested list of all orders from squarespace
 ## returns: dictionary of orders from json result
@@ -175,9 +232,10 @@ def get_squarespace_items(api_endpoint, json_return, parameters):
         if json_data['pagination']['hasNextPage']:
             return (item_list + get_squarespace_items(json_data['pagination']['nextPageUrl'], json_return, None))
     else:
-        print("Return status was NOT OK: %s" % response.status_code)
+        logging.error("Return status from response was requests.get was NOT OK: %s" % response.status_code)
         return False
 
+    logging.debug("Got item_list from get_squarespace_items of: %s" % item_list)
     return item_list
 
 def parse_squarespace_orders(unparsed_orders, filter_types):
@@ -211,6 +269,7 @@ def parse_squarespace_orders(unparsed_orders, filter_types):
                             'child_member_4_dob': '',
                             'child_member_5_name': '',
                             'child_member_5_dob': '',
+                            'photo_ok': '',
                             'mooring_location': '',
                             'mooring_color': '',
                             'boat_type': '',
@@ -225,6 +284,9 @@ def parse_squarespace_orders(unparsed_orders, filter_types):
         parsed_order['order_no'] = member['orderNumber']
         parsed_order['name'] = member['billingAddress']['firstName'] + " " + member['billingAddress']['lastName']
         parsed_order['email'] = member['customerEmail']
+
+        # Set a default for photo_ok which will be changed on family plans
+        parsed_order['photo_ok'] = 'Not Applicable'
 
         # Figure out the home address
         try:
@@ -279,6 +341,11 @@ def parse_squarespace_orders(unparsed_orders, filter_types):
                             elif (customization['label'] == 'Child Family Member #5'):
                                 parsed_order['child_member_5_name'] = line_item['customizations'][index][item]
                                 parsed_order['child_member_5_dob'] = line_item['customizations'][index+1][item]
+                            elif (customization['label'] == 'SYC Photography'):
+                                if customization['value'] == "SYC may publish my child's photo.":
+                                    parsed_order['photo_ok'] = 'Yes'
+                                else:
+                                    parsed_order['photo_ok'] = 'No'
 
             # Check if they bought a mooring
             if line_item['productName'] in filter_type_moorings:
@@ -308,6 +375,7 @@ def parse_squarespace_orders(unparsed_orders, filter_types):
         if add_member_to_list:
             parsed_orderlist.append(parsed_order)
 
+    logging.debug("Returning parsed_orderlist from parse_squarespace_orders: %s" % parsed_orderlist)
     return parsed_orderlist
 
 def parse_squarespace_transactions(unparsed_transactions):
@@ -327,6 +395,7 @@ def parse_squarespace_transactions(unparsed_transactions):
                             'payments_provider': '',
                             'payments_processing_fees': '',
                             'payments_paidon': '',
+                            'payments_externalid': '',
                             }
 
         parsed_transaction['order_id'] = tx['salesOrderId']
@@ -352,6 +421,7 @@ def parse_squarespace_transactions(unparsed_transactions):
             parsed_transaction['payments_creditcard'] = tx['payments'][0]['creditCardType']
             parsed_transaction['payments_provider'] = tx['payments'][0]['provider']
             parsed_transaction['payments_paidon'] = parsedate.isoparse(tx['payments'][0]['paidOn']).ctime()
+            parsed_transaction['payments_externalid'] = tx['payments'][0]['externalTransactionId']
 
             fees = 0
             for fee in tx['payments'][0]['processingFees']:
@@ -363,62 +433,86 @@ def parse_squarespace_transactions(unparsed_transactions):
 
         parsed_tx_list.append(parsed_transaction)
 
+    logging.debug("Returning parsed_tx_list from parse_squarespace_transactions: %s" % parsed_tx_list)
     return parsed_tx_list
 
-def get_spreadsheet(spreadsheet_title, addtl_share_perms=[], notify_users=False):
+def parse_stripe_transactions(unparsed_transactions, year):
+    parsed_tx_list = []
 
-    # define the scope
-    scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
+    for tx in unparsed_transactions:
+        parsed_transaction = {
+                            'order_id': '',
+                            'email': '',
+                            'description': '',
+                            'total': '',
+                            'total_netpayment': '',
+                            'category': '',
+                            'type': '',
+                            'payments_paidon': '',
+                            'payments_available': '',
+                            'payments_externalid': '',
+                            'payments_processing_fees': '',
+                            }
 
-    # add credentials to the account
-    credentials = ServiceAccountCredentials.from_json_keyfile_name('googleCreds.json', scope)
+        parsed_transaction['payments_paidon'] = datetime.fromtimestamp(tx['created']).ctime()
+        parsed_transaction['payments_available'] = datetime.fromtimestamp(tx['available_on']).ctime()
 
-    # authorize the clientsheet
-    client = gspread.authorize(credentials)
+        parsed_transaction['order_id'] = tx['id']
+        parsed_transaction['description'] = tx['description']
 
-    # get the instance of the Spreadsheet
+        if tx['description'].startswith('Charge for'):
+            parsed_transaction['email'] = tx['description'][10:]
+
+        parsed_transaction['total'] = float(tx['amount'] / 100)
+        parsed_transaction['payments_processing_fees'] = float(tx['fee'] / 100)
+        parsed_transaction['total_netpayment'] = parsed_transaction['total'] - parsed_transaction['payments_processing_fees']
+        parsed_transaction['category'] = tx['reporting_category']
+        parsed_transaction['type'] = tx['type']
+        parsed_transaction['payments_externalid'] = tx['source']
+
+        if (datetime.fromtimestamp(tx['created']).year) == year:
+            parsed_tx_list.append(parsed_transaction)
+
+    logging.debug("Returning parsed_tx_list from parse_stripe_transactions: %s" % parsed_tx_list)
+    return parsed_tx_list
+
+def sync_stripe_transactions(transacts_in_json, year):
+    spreadsheet_title = 'SYC Transactions'
+    worksheet_title = "Stripe %s" % year
+    spreadsheet_header = spreadsheet_header_stripe_transactions
+
+    formatted_transacts = []
+    parsed_transacts = parse_stripe_transactions(transacts_in_json, year)
+
+    for tx in parsed_transacts:
+        formatted_tx = [
+                            tx['order_id'],
+                            tx['email'],
+                            tx['description'],
+                            tx['payments_paidon'],
+                            tx['total'],
+                            tx['payments_processing_fees'],
+                            tx['total_netpayment'],
+                            tx['category'],
+                            tx['type'],
+                            tx['payments_externalid'],
+                        ]
+        formatted_transacts.append(formatted_tx)
+
+    # get the spreadsheet handler
+    gs = get_spreadsheet(spreadsheet_title)
+
+    # update the google sheet
+    # check for column 1 for non-duplicate entries
     try:
-        handler = client.open(spreadsheet_title)
-    except SpreadsheetNotFound:
-        # only notify users if we had to create a new sheet
-        notify_users = True
-        handler = client.create(spreadsheet_title)
+        update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_transacts)
+    except Exception as e:
+        logging.error("Failure updating google sheets: %s" % e)
+        return 1
 
-    #print("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
-
-    email_perms = admin_email_accts + addtl_share_perms
-    for email in email_perms:
-        handler.share(email, perm_type='user', role='reader', notify=notify_users)
-
-    return handler
-
-def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
-
-    # make a spreadsheet for the year if necessary
-    # set the target_sheet for the sheet we'll be writing to
-    worksheets = spreadsheet.worksheets()
-
-    target_sheet = None
-    for sheet in worksheets:
-        if sheet.title == worksheet_title:
-            target_sheet = sheet
-
-    # If sheet was not found create it
-    if not target_sheet:
-        target_sheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1, cols=len(rows_to_add[0]))
-
-    target_sheet.clear()
-    target_sheet.resize(rows=1)
-    target_sheet.append_row(header_row, value_input_option='USER-ENTERED', table_range='A1:B1')
-
-    start_row = 1
-    target_sheet.append_rows(rows_to_add, value_input_option='USER-ENTERED', table_range='A{}'.format(start_row))
-    target_sheet.columns_auto_resize(0, len(rows_to_add[0]))
-
-    return True
+    return 0
 
 def sync_memberships(orders_in_json, year):
-
     spreadsheet_title = "SYC Waterfront - Year %s" % year
     worksheet_title = 'Memberships'
     spreadsheet_header = spreadsheet_header_members
@@ -449,6 +543,7 @@ def sync_memberships(orders_in_json, year):
                             order['child_member_4_dob'],
                             order['child_member_5_name'],
                             order['child_member_5_dob'],
+                            order['photo_ok'],
                             ]
         formatted_orders.append(formatted_order)
 
@@ -461,15 +556,15 @@ def sync_memberships(orders_in_json, year):
     # update the google sheet
     # check for column 1 for non-duplicate entries
     try:
+        logging.debug("Writing out to memberships spreadsheet: %s" % formatted_orders)
         update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_orders)
     except Exception as e:
-        print("failure updating google sheets: %s" % e)
+        logging.error("Failure updating google sheets: %s" % e)
         return 1
 
     return 0
 
 def sync_moorings(orders_in_json, year):
-
     spreadsheet_title = "SYC Waterfront - Year %s" % year
     worksheet_title = 'Moorings'
     spreadsheet_header = spreadsheet_header_moorings
@@ -508,15 +603,15 @@ def sync_moorings(orders_in_json, year):
 
     # update the google sheet
     try:
+        logging.debug("Writing out to mooring spreadsheet: %s" % formatted_orders)
         update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_orders)
     except Exception as e:
-        print("failure updating google sheets: %s" % e)
+        logging.error("Failure updating google sheets: %s" % e)
         return 1
 
     return 0
 
 def sync_orders(orders_in_json, year):
-
     spreadsheet_title = 'SYC Orders'
     worksheet_title = "Year %s" % year
     spreadsheet_header = spreadsheet_header_orders
@@ -550,6 +645,7 @@ def sync_orders(orders_in_json, year):
                             order['child_member_4_dob'],
                             order['child_member_5_name'],
                             order['child_member_5_dob'],
+                            order['photo_ok'],
                             order['mooring_location'],
                             order['mooring_color'],
                             order['boat_type'],
@@ -565,17 +661,18 @@ def sync_orders(orders_in_json, year):
     # update the google sheet
     # check for column 1 for non-duplicate entries
     try:
+        logging.debug("Writing out to squarespace orders spreadsheet: %s" % formatted_orders)
         update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_orders)
     except Exception as e:
-        print("failure updating google sheets: %s" % e)
+        logging.error("Failure updating google sheets: %s" % e)
         return 1
 
     return 0
 
-def sync_squarespace_transactions(transacts_in_json, spreadsheet_title, year):
-
-    worksheet_title = "Year %s" % year
-    spreadsheet_header = spreadsheet_header_transactions
+def sync_squarespace_transactions(transacts_in_json, year):
+    spreadsheet_title = 'SYC Transactions'
+    worksheet_title = "Squarespace %s" % year
+    spreadsheet_header = spreadsheet_header_squarespace_transactions
 
     formatted_transacts = []
     parsed_transacts = parse_squarespace_transactions(transacts_in_json)
@@ -592,6 +689,7 @@ def sync_squarespace_transactions(transacts_in_json, spreadsheet_title, year):
                             tx['discounts'],
                             tx['payments_creditcard'],
                             tx['payments_provider'],
+                            tx['payments_externalid'],
                             tx['voided'],
                             tx['payments_error'],
                         ]
@@ -603,25 +701,18 @@ def sync_squarespace_transactions(transacts_in_json, spreadsheet_title, year):
     # update the google sheet
     # check for column 1 for non-duplicate entries
     try:
+        logging.debug("Writing out to squarespace transactions spreadsheet: %s" % formatted_transacts)
         update_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_transacts)
     except Exception as e:
-        print("Failure updating google sheets: %s" % e)
+        logging.error("Failure updating google sheets: %s" % e)
         return 1
 
+    logging.info("Finished writing out squarespace transactions")
     return 0
 
-def main():
-    # Added tests for environment variables
-    if os.environ.get('SQUARESPACE_API_KEY') is None:
-        print("Failed to pass SQUARESPACE_API_KEY")
-        return 1
-
+def sync_squarespace(year):
     orders_api_endpoint = "https://api.squarespace.com/1.0/commerce/orders"
     transactions_api_endpoint = "https://api.squarespace.com/1.0/commerce/transactions"
-
-    # Process the current year by default. Uncomment below to get information for previous years
-    year = datetime.now().year
-    #year = 2021
 
     year_beginning = date(year, 1, 1).isoformat()+ 'T00:00:00.0Z'
     year_end = date(year, 12, 30).isoformat()+ 'T00:00:00.0Z'
@@ -637,41 +728,85 @@ def main():
     # This applies to Squarespace API requests only
     try:
         json_var = 'result'
-        orders_in_json = get_squarespace_items(orders_api_endpoint, json_var, request_parameters)
+        orders = get_squarespace_items(orders_api_endpoint, json_var, request_parameters)
 
-        if not orders_in_json:
-            print("No new orders since the beginning of the year")
+        if not orders:
+            logging.info("No new orders since the beginning of the year. Moving on")
             return 0
 
     except requests.exceptions.HTTPError as error:
-        print("Failed to get new members: %s" % error)
+        logging.error("Failed to get new members: %s" % error)
         return 1
 
     # Sync orders
-    sync_orders(orders_in_json, year)
+    sync_orders(orders, year)
+    logging.info("Finished writing out Squarespace orders report")
 
     # Sync memberships
-    sync_memberships(orders_in_json, year)
+    sync_memberships(orders, year)
+    logging.info("Finished writing out Squarespace memberships report")
 
     # Sync moorings
-    sync_moorings(orders_in_json, year)
+    sync_moorings(orders, year)
+    logging.info("Finished writing out Squarespace moorings report")
 
     # Get all transactions for specified year
     # the json result will be of documents type
     try:
         json_var = 'documents'
-        transactions_in_json = get_squarespace_items(transactions_api_endpoint, json_var, request_parameters)
-        if not transactions_in_json:
-            print("No transactions since the beginning of the year")
+        transactions = get_squarespace_items(transactions_api_endpoint, json_var, request_parameters)
+        if not transactions:
+            logging.warning("No transactions since the beginning of the year")
             return 0
 
     except requests.exceptions.HTTPError as error:
-        print("Failed to get new members: %s" % error)
+        logging.error("Failed to get new members: %s" % error)
         return 1
 
     # Sync transactions
-    title = 'SYC Transactions'
-    sync_squarespace_transactions(transactions_in_json, title, year)
+    sync_squarespace_transactions(transactions, year)
+    logging.info("Finished writing out Squarespace transactions report")
+
+    return 0
+
+def sync_stripe(year):
+    stripe.api_key = os.environ.get('STRIPE_API_KEY')
+
+    transactions = []
+    for tx in stripe.BalanceTransaction.auto_paging_iter():
+        if datetime.fromtimestamp(tx['created']).year:
+            transactions.append(tx)
+
+    if not transactions:
+        logging.info("No transactions since the beginning of the year")
+        return 0
+
+    logging.debug("Stripe transactions found: %s" % transactions)
+    sync_stripe_transactions(transactions, year)
+    logging.info("Finished writing out Stripe transactions report")
+
+    return 0
+
+def main():
+    # Added tests for environment variables
+    if os.environ.get('SQUARESPACE_API_KEY') is None:
+        logging.critical("Failed to pass SQUARESPACE_API_KEY. Exiting")
+        return 1
+
+    if os.environ.get('STRIPE_API_KEY') is None:
+        logging.critical("Failed to pass STRIPE_API_KEY. Exiting")
+        return 1
+
+    LOGLEVEL = os.environ.get('LOGLEVEL', 'INFO').upper()
+    logging.basicConfig(level=LOGLEVEL)
+
+    # Process the current year by default. Uncomment below to get information for previous years
+    year = datetime.now().year
+    #year = 2021
+
+    sync_squarespace(year)
+
+    sync_stripe(year)
 
     return 0
 
@@ -683,6 +818,6 @@ if __name__ == "__main__":
     try:
         return_val = main()
     except KeyboardInterrupt:
-        print("Caught a control-C. Bailing out")
+        logging.critical("Caught a control-C. Bailing out")
 
     sys.exit(return_val)
