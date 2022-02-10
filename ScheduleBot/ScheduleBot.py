@@ -50,12 +50,11 @@ spreadsheet_header_lesson_transactions = [
 admin_email_accts = [
                         'commodore@sherbornyachtclub.org',
                         'info@sherbornyachtclub.org',
-                        'brent.holden@gmail.com',
+                        'instruction@sherbornyachtclub.org',
                     ]
 
 waterfront_email_accts = [
                         'waterfront@sherbornyachtclub.org',
-                        'instruction@sherbornyachtclub.org',
                         ]
 
 def get_spreadsheet(spreadsheet_title, addtl_share_perms=[], notify_users=False):
