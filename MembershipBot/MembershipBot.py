@@ -739,16 +739,22 @@ def sync_squarespace(year):
         return 1
 
     # Sync orders
-    sync_orders(orders, year)
-    logging.info("Finished writing out Squarespace orders report")
+    if sync_orders(orders, year) == 0:
+        logging.info("Finished writing out Squarespace orders report")
+    else:
+        logging.warning("Error writing out Squarespace orders report")
 
     # Sync memberships
-    sync_memberships(orders, year)
-    logging.info("Finished writing out Squarespace memberships report")
+    if sync_memberships(orders, year) == 0:
+        logging.info("Finished writing out Squarespace memberships report")
+    else:
+        logging.warning("Error writing out Squarespace memberships report")
 
     # Sync moorings
-    sync_moorings(orders, year)
-    logging.info("Finished writing out Squarespace moorings report")
+    if sync_moorings(orders, year) == 0:
+        logging.info("Finished writing out Squarespace moorings report")
+    else:
+        logging.warning("Error writing out Squarespace memberships report")
 
     # Get all transactions for specified year
     # the json result will be of documents type
@@ -782,10 +788,8 @@ def sync_stripe(year):
         return 0
 
     logging.debug("Stripe transactions found: %s" % transactions)
-    sync_stripe_transactions(transactions, year)
-    logging.info("Finished writing out Stripe transactions report")
 
-    return 0
+    return sync_stripe_transactions(transactions, year)
 
 def main():
     # Added tests for environment variables
@@ -804,9 +808,15 @@ def main():
     year = datetime.now().year
     #year = 2021
 
-    sync_squarespace(year)
+    if sync_squarespace(year) == 0:
+        logging.info("Finished writing out Squarespace transactions report")
+    else:
+        logging.warning("Error while writing out Squarespace transactions report")
 
-    sync_stripe(year)
+    if sync_stripe(year) == 0:
+        logging.info("Finished writing out Stripe transactions report")
+    else:
+        logging.warning("Error while writing out Stripe transactions report")
 
     return 0
 
