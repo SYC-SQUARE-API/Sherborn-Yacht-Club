@@ -130,7 +130,7 @@ spreadsheet_header_squarespace_transactions = [
                     ]
 
 spreadsheet_header_stripe_transactions = [
-                        'Txn Id',
+                        'Stripe Source Id',
                         'Customer Email',
                         'Description',
                         'Paid On',
@@ -139,7 +139,7 @@ spreadsheet_header_stripe_transactions = [
                         'Total Net Payment',
                         'Category',
                         'Type',
-                        'Stripe Source Id',
+                        'Txn Id',
                     ]
 
 admin_email_accts = [
@@ -151,6 +151,8 @@ admin_email_accts = [
 waterfront_email_accts = [
                         'waterfront@sherbornyachtclub.org',
                         ]
+
+date_string = "%B %d %Y"
 
 def get_spreadsheet(spreadsheet_title, addtl_share_perms=[], notify_users=False):
 
@@ -422,7 +424,7 @@ def parse_squarespace_transactions(unparsed_transactions):
         try:
             parsed_transaction['payments_creditcard'] = tx['payments'][0]['creditCardType']
             parsed_transaction['payments_provider'] = tx['payments'][0]['provider']
-            parsed_transaction['payments_paidon'] = parsedate.isoparse(tx['payments'][0]['paidOn']).ctime()
+            parsed_transaction['payments_paidon'] = parsedate.isoparse(tx['payments'][0]['paidOn']).strftime(date_string)
             parsed_transaction['payments_externalid'] = tx['payments'][0]['externalTransactionId']
 
             fees = 0
@@ -456,8 +458,8 @@ def parse_stripe_transactions(unparsed_transactions, year):
                             'payments_processing_fees': '',
                             }
 
-        parsed_transaction['payments_paidon'] = datetime.fromtimestamp(tx['created']).ctime()
-        parsed_transaction['payments_available'] = datetime.fromtimestamp(tx['available_on']).ctime()
+        parsed_transaction['payments_paidon'] = datetime.fromtimestamp(tx['created']).strftime(date_string)
+        parsed_transaction['payments_available'] = datetime.fromtimestamp(tx['available_on']).strftime(date_string)
 
         parsed_transaction['order_id'] = tx['id']
         parsed_transaction['description'] = tx['description']
@@ -488,7 +490,7 @@ def sync_stripe_transactions(transacts_in_json, year):
 
     for tx in parsed_transacts:
         formatted_tx = [
-                            tx['order_id'],
+                            tx['payments_externalid'],
                             tx['email'],
                             tx['description'],
                             tx['payments_paidon'],
@@ -497,7 +499,7 @@ def sync_stripe_transactions(transacts_in_json, year):
                             tx['total_netpayment'],
                             tx['category'],
                             tx['type'],
-                            tx['payments_externalid'],
+                            tx['order_id'],
                         ]
         formatted_transacts.append(formatted_tx)
 
@@ -763,6 +765,7 @@ def sync_squarespace(year):
     try:
         json_var = 'documents'
         transactions = get_squarespace_items(transactions_api_endpoint, json_var, request_parameters)
+        logging.debug("Got raw transactions: %s" % transactions)
         if not transactions:
             logging.warning("No transactions since the beginning of the year")
             return 0
