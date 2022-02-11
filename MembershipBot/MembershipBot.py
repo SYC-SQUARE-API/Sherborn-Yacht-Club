@@ -197,6 +197,7 @@ def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
         logging.debug("Added worksheet: %s" % worksheet_title)
         target_sheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1, cols=len(rows_to_add[0]))
 
+    target_sheet.delete_rows(1)
     target_sheet.clear()
     target_sheet.resize(rows=1)
     target_sheet.append_row(header_row, value_input_option='USER-ENTERED')
@@ -204,6 +205,7 @@ def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
     start_row = 1
     target_sheet.append_rows(rows_to_add, value_input_option='USER-ENTERED', table_range='A{}'.format(start_row))
     target_sheet.columns_auto_resize(0, len(rows_to_add[0]))
+    target_sheet.freeze(rows=1)
 
     return True
 
