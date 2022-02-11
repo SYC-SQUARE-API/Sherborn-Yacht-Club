@@ -112,6 +112,7 @@ def append_row_to_spreadsheet(spreadsheet, worksheet_title, header_row, row_to_a
     start_row = 1
     target_sheet.append_row(row_to_add, value_input_option='USER-ENTERED', table_range='A{}'.format(start_row))
     target_sheet.columns_auto_resize(0, len(row_to_add))
+    target_sheet.freeze(rows=1)
     logging.info("Updated Google Sheet successfully")
 
     return True
