@@ -72,6 +72,9 @@ waterfront_email_accts = [
                         'waterfront@sherbornyachtclub.org',
                         ]
 
+# get Google auth client
+# returns client
+# will not cause exception unless an action is performed against the API. that's nice
 def auth_google(credentials):
     scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
     credentials = ServiceAccountCredentials.from_json_keyfile_name(credentials, scope)
@@ -79,6 +82,8 @@ def auth_google(credentials):
 
     return client
 
+# create a spreadsheet, takes spreadsheet title, and optional notify users on creation boolean
+# returns spreadsheet handler
 def create_spreadsheet(client, spreadsheet_title, notify_users=False):
 
     handler = client.create(spreadsheet_title)
@@ -93,6 +98,8 @@ def create_spreadsheet(client, spreadsheet_title, notify_users=False):
 
     return handler
 
+# get spreadsheet but cause exception if failed
+# returns handler if succesful
 def get_spreadsheet(client, spreadsheet_title):
 
     handler = client.open(spreadsheet_title)
@@ -101,6 +108,8 @@ def get_spreadsheet(client, spreadsheet_title):
     logging.debug("Retrieved spreadsheet and returning handler to caller")
     return handler
 
+# get spreadsheet but handle exception and create spreadsheet automatically if failed
+# returns handler if succesful
 def get_or_create_spreadsheet(client, spreadsheet_title, notify_users=False):
 
     try:
@@ -112,6 +121,8 @@ def get_or_create_spreadsheet(client, spreadsheet_title, notify_users=False):
     logging.debug("Retrieved spreadsheet and returning handler to caller")
     return handler
 
+# remove a row from spreadsheet, required spreadsheet title, worksheet id, and the row in int
+# returns True if successful
 def remove_row_from_spreadsheet(client, spreadsheet_title, worksheet_id, row):
     logging.debug("Entering remove_row_from_spreadsheet")
 
@@ -137,6 +148,8 @@ def remove_row_from_spreadsheet(client, spreadsheet_title, worksheet_id, row):
     logging.info("Appointment removed")
     return True
 
+# update the row, required spreadsheet title, worksheet id, the row in int, appointment dictionary returned by find_order_by_id
+# returns True if successful
 def update_row_in_spreadsheet(client, spreadsheet_title, worksheet_id, row, appointment):
     logging.debug("Entering update_row_in_spreadsheet")
 
@@ -160,6 +173,8 @@ def update_row_in_spreadsheet(client, spreadsheet_title, worksheet_id, row, appo
     logging.info("Appointment updated")
     return True
 
+# add a row to the spreadsheet. required spreadsheet handler, worksheet title, header row, and a formatted row to add in list
+# returns True if successful
 def append_row_to_spreadsheet(spreadsheet, worksheet_title, header_row, row_to_add):
     logging.debug("Entering append_row_to_spreadsheet")
 
@@ -219,6 +234,8 @@ def get_appointment_by_id(id):
     logging.debug("Returning appointment from get_appointment_by_id: %s" % appointment)
     return appointment
 
+# function to find order by id in int. takes in order id in int, and list of spreadsheet names to search
+# returns tuples of spreadsheet title, worksheet id, and row id in int if found
 def find_order_by_id(client, order_id, spreadsheet_names):
     # This functions expects an order id in the form of a string and a list of spreadsheet names to go looking in
     found = False
@@ -259,6 +276,8 @@ def find_order_by_id(client, order_id, spreadsheet_names):
 
     return (spreadsheet_title, worksheet_id, row)
 
+# verifies membership. takes in email in string returned from find_order_by_id dictionary and year
+# returns True if found in the membership spreadsheet
 def verify_member(client, email, year):
     found = False
 
@@ -287,6 +306,8 @@ def verify_member(client, email, year):
 
     return found
 
+# add lesson or race to the spreadsheet. takes in dictionary appointment returned by find_order_by_id
+# returns true if successful
 def add_lesson_race(client, appointment):
     logging.debug("Entering add_lesson_race")
 
@@ -338,6 +359,8 @@ def add_lesson_race(client, appointment):
 
     return 0
 
+# add lesson or race transaction to the spreadsheet. takes in dictionary appointment returned by find_order_by_id
+# returns true if successful
 def add_lesson_transaction(client, appointment):
     logging.debug("Entering add_lesson_transaction")
 
@@ -373,7 +396,7 @@ def add_lesson_transaction(client, appointment):
                         membership,
                     ]
 
-    # Write out the transaction in a worksheet with the general ledger
+    # Also write out the transaction in a worksheet with the general ledger
     ledger_title = 'All Transactions'
     ledger_header = spreadsheet_header_transactions_ledger
 
@@ -410,11 +433,10 @@ def add_lesson_transaction(client, appointment):
         logging.error("Failure updating google sheets: %s" % e)
         return 1
 
-
-
-
     return 0
 
+# add reservation to the waterfront spreadsheet. takes in dictionary appointment returned by find_order_by_id
+# returns true if successful
 def add_reservation(client, appointment):
 
     year = parsedate.isoparse(appointment['datetime']).year
@@ -455,6 +477,8 @@ def add_reservation(client, appointment):
 
     return 0
 
+# updates a reservation. takes in dictionary appointment returned by find_order_by_id
+# returns true if successful
 def update_appointment(client, appointment):
 
     year = parsedate.isoparse(appointment['datetime']).year
@@ -513,6 +537,8 @@ def update_appointment(client, appointment):
 
     return 0
 
+# removes a reservation. takes in dictionary appointment returned by find_order_by_id
+# returns true if successful
 def remove_appointment(client, appointment):
 
     year = parsedate.isoparse(appointment['datetime']).year
@@ -538,6 +564,9 @@ def remove_appointment(client, appointment):
 
     return 0
 
+# parse out the string that is received by lambda in the body of the json document
+# returns a dictionary that includes action, id, appointmentTypeID, calendarID
+# we ignore everything but the action and the id because reasons
 def parse_lambda_event(unparsed_event):
     parsed_event = {}
 
@@ -555,6 +584,7 @@ def parse_lambda_event(unparsed_event):
     logging.debug("Returning parsed_event from parse_lambda_event: %s" % parsed_event)
     return parsed_event
 
+# enter the main event
 def main(event, context):
 
     LOGLEVEL = os.environ.get('LOGLEVEL', 'INFO').upper()
