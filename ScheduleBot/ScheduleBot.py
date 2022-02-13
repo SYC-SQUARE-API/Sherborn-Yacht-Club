@@ -34,6 +34,7 @@ spreadsheet_header_waterfront_reservations = [
                         'Time In',
                         'Time Out',
                         'Type',
+                        'Member Status',
                     ]
 
 spreadsheet_header_lesson_transactions = [
@@ -41,6 +42,19 @@ spreadsheet_header_lesson_transactions = [
                         'Name',
                         'Email',
                         'Phone',
+                        'Order Placed',
+                        'List Price',
+                        'Amount Paid',
+                        'Paid',
+                        'Member Status',
+                    ]
+
+spreadsheet_header_transactions_ledger = [
+                        'Order Id',
+                        'Name',
+                        'Email',
+                        'Phone',
+                        'Type',
                         'Order Placed',
                         'List Price',
                         'Amount Paid',
@@ -64,47 +78,6 @@ def auth_google(credentials):
     client = gspread.authorize(credentials)
 
     return client
-
-def find_order_by_id(client, order_id, spreadsheet_names):
-    # This functions expects an order id in the form of a string and a list of spreadsheet names to go looking in
-    found = False
-
-    logging.debug("Started find_order_by_id with id: %s and spreadsheet_names: %s" % (order_id, spreadsheet_names))
-
-    for spreadsheet in spreadsheet_names:
-        # get the instance of the Spreadsheet
-        try:
-            gs = client.open(spreadsheet)
-            logging.debug("Opened sheet '%s' available at: %s" % (spreadsheet, gs.url))
-
-            worksheets = gs.worksheets()
-            logging.debug("Got worksheets of: %s" % worksheets)
-
-
-            print("Spreadsheet title is: %s" % spreadsheet)
-
-            logging.debug("Now hunting for order id %s in worksheets: %s" % (order_id, worksheets))
-            for worksheet in worksheets:
-                logging.debug("Opening worksheet: %s" % worksheet)
-                cell = worksheet.find(str(order_id), in_column=1)
-                if cell:
-                    found = True
-                    spreadsheet_title = spreadsheet
-                    worksheet_id = worksheet.id
-                    row = cell
-                    logging.debug("Found order and returning: %s, %s, %s" % (spreadsheet_title, worksheet_id, row))
-
-        except SpreadsheetNotFound:
-            logging.warning("Got an error trying to open spreadsheet %s in worksheets: %s")
-            pass
-
-    if found is False:
-        logging.debug("Returning: %s" % found)
-        return None
-
-    logging.debug("Returning: %s, %s, %s" % (spreadsheet_title, worksheet_id, row))
-
-    return (spreadsheet_title, worksheet_id, row)
 
 def create_spreadsheet(client, spreadsheet_title, notify_users=False):
 
@@ -246,6 +219,74 @@ def get_appointment_by_id(id):
     logging.debug("Returning appointment from get_appointment_by_id: %s" % appointment)
     return appointment
 
+def find_order_by_id(client, order_id, spreadsheet_names):
+    # This functions expects an order id in the form of a string and a list of spreadsheet names to go looking in
+    found = False
+
+    logging.debug("Started find_order_by_id with id: %s and spreadsheet_names: %s" % (order_id, spreadsheet_names))
+
+    for spreadsheet in spreadsheet_names:
+        # get the instance of the Spreadsheet
+        try:
+            gs = client.open(spreadsheet)
+            logging.debug("Opened sheet '%s' available at: %s" % (spreadsheet, gs.url))
+
+            worksheets = gs.worksheets()
+            logging.debug("Got worksheets of: %s" % worksheets)
+
+            print("Spreadsheet title is: %s" % spreadsheet)
+
+            logging.debug("Now hunting for order id %s in worksheets: %s" % (order_id, worksheets))
+            for worksheet in worksheets:
+                logging.debug("Opening worksheet: %s" % worksheet)
+                cell = worksheet.find(str(order_id), in_column=1)
+                if cell:
+                    found = True
+                    spreadsheet_title = spreadsheet
+                    worksheet_id = worksheet.id
+                    row = cell
+                    logging.debug("Found order and returning: %s, %s, %s" % (spreadsheet_title, worksheet_id, row))
+
+        except SpreadsheetNotFound:
+            logging.warning("Got an error trying to open spreadsheet %s in worksheets: %s")
+            pass
+
+    if found is False:
+        logging.debug("Returning: %s" % found)
+        return None
+
+    logging.debug("Returning: %s, %s, %s" % (spreadsheet_title, worksheet_id, row))
+
+    return (spreadsheet_title, worksheet_id, row)
+
+def verify_member(client, email, year):
+    found = False
+
+    logging.debug("Started verify_member with email: %s" % email)
+
+    try:
+        logging.debug("Opening spreadsheet: SYC Waterfront - Year %s" % year)
+        members_spreadsheet = get_spreadsheet(client, "SYC Waterfront - Year %s" % year)
+        members_worksheet = 'Memberships'
+        worksheets = members_spreadsheet.worksheets()
+
+        for sheet in worksheets:
+            if sheet.title == members_worksheet:
+                logging.debug("FOUND membership sheet: %s" % sheet)
+
+                if sheet.findall(email):
+                    found = True
+                    logging.info("Found %s in membership spreadsheet for" % email)
+                else:
+                    logging.info("Didn't find %s in membership spreadsheet for" % email)
+            else:
+                logging.debug("DID NOT FIND membership sheet: %s" % sheet)
+
+    except ValueError:
+        logging.warning("Couldn't open up membership spreadsheet for membership verification")
+
+    return found
+
 def add_lesson_race(client, appointment):
     logging.debug("Entering add_lesson_race")
 
@@ -316,32 +357,32 @@ def add_lesson_transaction(client, appointment):
     # Default to non-member, revise if we find them
     membership = 'Non-Member'
 
-    try:
-        members_spreadsheet = get_or_create_spreadsheet(client, "SYC Waterfront - Year %s" % year)
-        members_worksheet = 'Memberships'
-        worksheets = members_spreadsheet.worksheets()
+    if verify_member(client, appointment['email'], year):
+        membership = 'Member'
 
-        for sheet in worksheets:
-            if sheet.title == members_worksheet:
-                logging.debug("FOUND membership sheet: %s" % sheet)
-
-                if sheet.findall(appointment['email']):
-                    membership = 'Member'
-                    logging.info("Found %s in membership spreadsheet for" % appointment['email'])
-                else:
-                    logging.info("Didn't find %s in membership spreadsheet for" % appointment['email'])
-            else:
-                logging.debug("DID NOT FIND membership sheet: %s" % sheet)
-
-    except:
-        logging.warning("Couldn't open up membership spreadsheet for membership verification")
-
-
+    # Write out the transaction in a worksheet specific to the class
     formatted_appt = [
                         appointment['id'],
                         appointment['firstName'] + " " + appointment['lastName'],
                         appointment['email'],
                         appointment['phone'],
+                        appointment['date'],
+                        "$" + str(float(appointment['price'])),
+                        "$" + str(float(appointment['amountPaid'])),
+                        appointment['paid'],
+                        membership,
+                    ]
+
+    # Write out the transaction in a worksheet with the general ledger
+    ledger_title = 'All Transactions'
+    ledger_header = spreadsheet_header_transactions_ledger
+
+    formatted_transaction = [
+                        appointment['id'],
+                        appointment['firstName'] + " " + appointment['lastName'],
+                        appointment['email'],
+                        appointment['phone'],
+                        appointment['type'],
                         appointment['date'],
                         "$" + str(float(appointment['price'])),
                         "$" + str(float(appointment['amountPaid'])),
@@ -358,11 +399,19 @@ def add_lesson_transaction(client, appointment):
     # update the google sheet
     try:
         logging.debug("Writing out to lessons spreadsheet: %s" % formatted_appt)
+
         logging.debug("Spreadsheet info: Spreadsheet Title: %s, Worksheet Title: %s, Header: %s, Row to Append: %s" % (spreadsheet_title, worksheet_title, spreadsheet_header, formatted_appt))
         append_row_to_spreadsheet(gs, worksheet_title, spreadsheet_header, formatted_appt)
+
+        logging.debug("Spreadsheet info: Spreadsheet Title: %s, Worksheet Title: %s, Header: %s, Row to Append: %s" % (spreadsheet_title, ledger_title, ledger_header, formatted_transaction))
+        append_row_to_spreadsheet(gs, ledger_title, ledger_header, formatted_transaction)
+
     except Exception as e:
         logging.error("Failure updating google sheets: %s" % e)
         return 1
+
+
+
 
     return 0
 
@@ -375,6 +424,10 @@ def add_reservation(client, appointment):
     worksheet_title = 'Reservations'
     spreadsheet_header = spreadsheet_header_waterfront_reservations
 
+    membership = 'Non-Member'
+    if verify_member(client, appointment['email'], year):
+        membership = 'Member'
+
     formatted_appt = [
                         appointment['id'],
                         appointment['firstName'] + " " + appointment['lastName'],
@@ -384,6 +437,7 @@ def add_reservation(client, appointment):
                         appointment['time'],
                         appointment['endTime'],
                         appointment['type'],
+                        membership,
                     ]
 
     # get the spreadsheet handler
@@ -424,6 +478,10 @@ def update_appointment(client, appointment):
     # This is where we add the additional fields with forms if forms is defined
     # Otherwise we assume it's a reservation and add time, endTime, and type
 
+    membership = 'Non-Member'
+    if verify_member(client, appointment['email'], year):
+        membership = 'Member'
+
     formatted_appt = [
                         appointment['id'],
                         appointment['firstName'] + " " + appointment['lastName'],
@@ -447,6 +505,7 @@ def update_appointment(client, appointment):
         formatted_appt.append(appointment['time'])
         formatted_appt.append(appointment['endTime'])
         formatted_appt.append(appointment['type'])
+        formatted_appt.append(membership)
 
     # Time to remove the row from the sheet
     if not update_row_in_spreadsheet(client, spreadsheet, worksheet_id, cell.row, formatted_appt):
