@@ -551,6 +551,7 @@ def main(event, context):
             logging.info("Found a calendar event with forms attached. Forwarding to lessons and races")
             # If there are forms attached, its either a race or a lesson
             add_lesson_race(client, appointment)
+            add_lesson_transaction(client, appointment)
 
     elif action == 'canceled':
         logging.info("Caught a canceled event. Forwarding to remove_appointment")
