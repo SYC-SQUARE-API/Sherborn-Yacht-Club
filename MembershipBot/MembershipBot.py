@@ -130,7 +130,7 @@ spreadsheet_header_squarespace_transactions = [
                     ]
 
 spreadsheet_header_stripe_transactions = [
-                        'Txn Id',
+                        'Stripe Source Id',
                         'Customer Email',
                         'Description',
                         'Paid On',
@@ -139,7 +139,7 @@ spreadsheet_header_stripe_transactions = [
                         'Total Net Payment',
                         'Category',
                         'Type',
-                        'Stripe Source Id',
+                        'Txn Id',
                     ]
 
 admin_email_accts = [
@@ -151,6 +151,8 @@ admin_email_accts = [
 waterfront_email_accts = [
                         'waterfront@sherbornyachtclub.org',
                         ]
+
+date_string = "%B %d %Y"
 
 def get_spreadsheet(spreadsheet_title, addtl_share_perms=[], notify_users=False):
 
@@ -197,6 +199,7 @@ def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
         logging.debug("Added worksheet: %s" % worksheet_title)
         target_sheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1, cols=len(rows_to_add[0]))
 
+    target_sheet.delete_rows(1)
     target_sheet.clear()
     target_sheet.resize(rows=1)
     target_sheet.append_row(header_row, value_input_option='USER-ENTERED')
@@ -204,6 +207,7 @@ def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
     start_row = 1
     target_sheet.append_rows(rows_to_add, value_input_option='USER-ENTERED', table_range='A{}'.format(start_row))
     target_sheet.columns_auto_resize(0, len(rows_to_add[0]))
+    target_sheet.freeze(rows=1)
 
     return True
 
@@ -420,7 +424,7 @@ def parse_squarespace_transactions(unparsed_transactions):
         try:
             parsed_transaction['payments_creditcard'] = tx['payments'][0]['creditCardType']
             parsed_transaction['payments_provider'] = tx['payments'][0]['provider']
-            parsed_transaction['payments_paidon'] = parsedate.isoparse(tx['payments'][0]['paidOn']).ctime()
+            parsed_transaction['payments_paidon'] = parsedate.isoparse(tx['payments'][0]['paidOn']).strftime(date_string)
             parsed_transaction['payments_externalid'] = tx['payments'][0]['externalTransactionId']
 
             fees = 0
@@ -454,8 +458,8 @@ def parse_stripe_transactions(unparsed_transactions, year):
                             'payments_processing_fees': '',
                             }
 
-        parsed_transaction['payments_paidon'] = datetime.fromtimestamp(tx['created']).ctime()
-        parsed_transaction['payments_available'] = datetime.fromtimestamp(tx['available_on']).ctime()
+        parsed_transaction['payments_paidon'] = datetime.fromtimestamp(tx['created']).strftime(date_string)
+        parsed_transaction['payments_available'] = datetime.fromtimestamp(tx['available_on']).strftime(date_string)
 
         parsed_transaction['order_id'] = tx['id']
         parsed_transaction['description'] = tx['description']
@@ -486,7 +490,7 @@ def sync_stripe_transactions(transacts_in_json, year):
 
     for tx in parsed_transacts:
         formatted_tx = [
-                            tx['order_id'],
+                            tx['payments_externalid'],
                             tx['email'],
                             tx['description'],
                             tx['payments_paidon'],
@@ -495,7 +499,7 @@ def sync_stripe_transactions(transacts_in_json, year):
                             tx['total_netpayment'],
                             tx['category'],
                             tx['type'],
-                            tx['payments_externalid'],
+                            tx['order_id'],
                         ]
         formatted_transacts.append(formatted_tx)
 
@@ -739,22 +743,29 @@ def sync_squarespace(year):
         return 1
 
     # Sync orders
-    sync_orders(orders, year)
-    logging.info("Finished writing out Squarespace orders report")
+    if sync_orders(orders, year) == 0:
+        logging.info("Finished writing out Squarespace orders report")
+    else:
+        logging.warning("Error writing out Squarespace orders report")
 
     # Sync memberships
-    sync_memberships(orders, year)
-    logging.info("Finished writing out Squarespace memberships report")
+    if sync_memberships(orders, year) == 0:
+        logging.info("Finished writing out Squarespace memberships report")
+    else:
+        logging.warning("Error writing out Squarespace memberships report")
 
     # Sync moorings
-    sync_moorings(orders, year)
-    logging.info("Finished writing out Squarespace moorings report")
+    if sync_moorings(orders, year) == 0:
+        logging.info("Finished writing out Squarespace moorings report")
+    else:
+        logging.warning("Error writing out Squarespace memberships report")
 
     # Get all transactions for specified year
     # the json result will be of documents type
     try:
         json_var = 'documents'
         transactions = get_squarespace_items(transactions_api_endpoint, json_var, request_parameters)
+        logging.debug("Got raw transactions: %s" % transactions)
         if not transactions:
             logging.warning("No transactions since the beginning of the year")
             return 0
@@ -782,10 +793,8 @@ def sync_stripe(year):
         return 0
 
     logging.debug("Stripe transactions found: %s" % transactions)
-    sync_stripe_transactions(transactions, year)
-    logging.info("Finished writing out Stripe transactions report")
 
-    return 0
+    return sync_stripe_transactions(transactions, year)
 
 def main():
     # Added tests for environment variables
@@ -804,9 +813,15 @@ def main():
     year = datetime.now().year
     #year = 2021
 
-    sync_squarespace(year)
+    if sync_squarespace(year) == 0:
+        logging.info("Finished writing out Squarespace transactions report")
+    else:
+        logging.warning("Error while writing out Squarespace transactions report")
 
-    sync_stripe(year)
+    if sync_stripe(year) == 0:
+        logging.info("Finished writing out Stripe transactions report")
+    else:
+        logging.warning("Error while writing out Stripe transactions report")
 
     return 0
 
