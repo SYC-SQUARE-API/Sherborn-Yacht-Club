@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import os
 import sys
 import logging
@@ -568,10 +569,17 @@ def remove_appointment(client, appointment):
 # returns a dictionary that includes action, id, appointmentTypeID, calendarID
 # we ignore everything but the action and the id because reasons
 def parse_lambda_event(unparsed_event):
-    parsed_event = {}
+    logging.debug("Entering parse_lambda_event")
 
-    body = unparsed_event['body']
+    if unparsed_event['isBase64Encoded']:
+        logging.debug("Decoding from Lambda: %s" % unparsed_event['body'])
+        body = base64.b64decode(unparsed_event['body']).decode('ascii')
+    else:
+        logging.debug("Decoding from test harness: %s" % unparsed_event['body'])
+        body = unparsed_event['body']
+
     parameters = body.split('&')
+    parsed_event = {}
 
     for param in parameters:
         label = param.split('=')[0]
@@ -605,6 +613,8 @@ def main(event, context):
 
     try:
         client = auth_google(google_credentials_file)
+        # testing if Google client handler works
+        logging.info("Testing Google client handler")
         client.openall()
     except ValueError:
         # ValueError if bad file
