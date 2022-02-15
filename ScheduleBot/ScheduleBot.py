@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import os
 import sys
 import logging
@@ -568,10 +569,17 @@ def remove_appointment(client, appointment):
 # returns a dictionary that includes action, id, appointmentTypeID, calendarID
 # we ignore everything but the action and the id because reasons
 def parse_lambda_event(unparsed_event):
-    parsed_event = {}
+    logging.debug("Entering parse_lambda_event")
 
-    body = unparsed_event['body']
+    if unparsed_event['isBase64Encoded']:
+        logging.debug("Decoding from Lambda: %s" % unparsed_event['body'])
+        body = base64.b64decode(unparsed_event['body']).decode('ascii')
+    else:
+        logging.debug("Decoding from test harness: %s" % unparsed_event['body'])
+        body = unparsed_event['body']
+
     parameters = body.split('&')
+    parsed_event = {}
 
     for param in parameters:
         label = param.split('=')[0]
@@ -605,6 +613,8 @@ def main(event, context):
 
     try:
         client = auth_google(google_credentials_file)
+        # testing if Google client handler works
+        logging.info("Testing Google client handler")
         client.openall()
     except ValueError:
         # ValueError if bad file
@@ -664,7 +674,21 @@ def main(event, context):
     return 0
 
 def handler(event, context):
-    return main(event, context)
+    return_value = main(event, context)
+    status_code = 200
+
+    if return_value > 0:
+        return_string = "Executed with issues: %s" % return_value
+    else:
+        return_string = "Success"
+
+    response = {
+                    "statusCode": status_code,
+                    "body": return_string,
+                }
+
+    logging.debug("Returning response of: %s" % json.dumps(response))
+    return json.dumps(response)
 
 if __name__ == "__main__":
     return_val = 1
@@ -684,4 +708,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logging.critical("Caught a control-C. Bailing out")
 
+    logging.debug("Exiting test harness with %s" % return_val)
     sys.exit(return_val)
