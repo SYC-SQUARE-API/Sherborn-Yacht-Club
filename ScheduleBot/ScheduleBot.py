@@ -674,7 +674,21 @@ def main(event, context):
     return 0
 
 def handler(event, context):
-    return main(event, context)
+    return_value = main(event, context)
+    status_code = 200
+
+    if return_value > 0:
+        return_string = "Executed with issues: %s" % return_value
+    else:
+        return_string = "Success"
+
+    response = {
+                    "statusCode": status_code,
+                    "body": return_string,
+                }
+
+    logging.debug("Returning response of: %s" % json.dumps(response))
+    return json.dumps(response)
 
 if __name__ == "__main__":
     return_val = 1
@@ -694,4 +708,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logging.critical("Caught a control-C. Bailing out")
 
+    logging.debug("Exiting test harness with %s" % return_val)
     sys.exit(return_val)
