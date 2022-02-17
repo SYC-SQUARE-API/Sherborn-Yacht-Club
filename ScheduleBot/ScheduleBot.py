@@ -661,6 +661,10 @@ def main(event, context):
         # if canceled we'll need to look for the event id in the waterfront spreadsheet/reservations worksheet, and the lessons spreadsheet/all worksheets for the order id
         remove_appointment(client, appointment)
 
+        # if it has forms then add the transaction to the log
+        if appointment['forms'] != []:
+            add_lesson_transaction(client, appointment)
+
     elif action == 'rescheduled' or action == 'changed':
         logging.info("Caught a rescheduled or changed event. Forwarding to update_appointment")
         update_appointment(client, appointment)
