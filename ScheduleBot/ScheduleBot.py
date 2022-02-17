@@ -107,6 +107,7 @@ def get_spreadsheet(client, spreadsheet_title):
 
     logging.info("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
     logging.debug("Retrieved spreadsheet and returning handler to caller")
+
     return handler
 
 # get spreadsheet but handle exception and create spreadsheet automatically if failed
@@ -120,6 +121,7 @@ def get_or_create_spreadsheet(client, spreadsheet_title, notify_users=False):
 
     logging.info("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
     logging.debug("Retrieved spreadsheet and returning handler to caller")
+
     return handler
 
 # remove a row from spreadsheet, required spreadsheet title, worksheet id, and the row in int
@@ -147,6 +149,7 @@ def remove_row_from_spreadsheet(client, spreadsheet_title, worksheet_id, row):
             return False
 
     logging.info("Appointment removed")
+
     return True
 
 # update the row, required spreadsheet title, worksheet id, the row in int, appointment dictionary returned by find_order_by_id
@@ -172,6 +175,7 @@ def update_row_in_spreadsheet(client, spreadsheet_title, worksheet_id, row, appo
         return False
 
     logging.info("Appointment updated")
+
     return True
 
 # add a row to the spreadsheet. required spreadsheet handler, worksheet title, header row, and a formatted row to add in list
@@ -657,6 +661,10 @@ def main(event, context):
         # if canceled we'll need to look for the event id in the waterfront spreadsheet/reservations worksheet, and the lessons spreadsheet/all worksheets for the order id
         remove_appointment(client, appointment)
 
+        # if it has forms then add the transaction to the log
+        if appointment['forms'] != []:
+            add_lesson_transaction(client, appointment)
+
     elif action == 'rescheduled' or action == 'changed':
         logging.info("Caught a rescheduled or changed event. Forwarding to update_appointment")
         update_appointment(client, appointment)
@@ -668,7 +676,6 @@ def main(event, context):
 
     else:
         logging.warning("Caught an unhandled action. Not doing anything with it.")
-
 
     logging.info("Finished")
     return 0
