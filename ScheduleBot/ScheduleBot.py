@@ -85,7 +85,7 @@ def auth_google(credentials):
 
 # create a spreadsheet, takes spreadsheet title, and optional notify users on creation boolean
 # returns spreadsheet handler
-def create_spreadsheet(client, spreadsheet_title, notify_users=False):
+def create_spreadsheet(client, spreadsheet_title, notify_users=False, addtl_share_perms=None):
 
     handler = client.create(spreadsheet_title)
     logging.info("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
@@ -112,12 +112,12 @@ def get_spreadsheet(client, spreadsheet_title):
 
 # get spreadsheet but handle exception and create spreadsheet automatically if failed
 # returns handler if succesful
-def get_or_create_spreadsheet(client, spreadsheet_title, notify_users=False):
+def get_or_create_spreadsheet(client, spreadsheet_title, notify_users=False, addtl_share_perms=None):
 
     try:
         handler = client.open(spreadsheet_title)
     except:
-        handler = create_spreadsheet(client, spreadsheet_title, notify_users)
+        handler = create_spreadsheet(client, spreadsheet_title, notify_users, addtl_share_perms)
 
     logging.info("Sheet '%s' available at: %s" % (spreadsheet_title, handler.url))
     logging.debug("Retrieved spreadsheet and returning handler to caller")
@@ -468,7 +468,7 @@ def add_reservation(client, appointment):
                     ]
 
     # get the spreadsheet handler
-    gs = get_or_create_spreadsheet(client, spreadsheet_title)
+    gs = get_or_create_spreadsheet(client, spreadsheet_title, addtl_share_perms=waterfront_email_accts)
     logging.debug("Got spreadsheet in add_reservation")
 
     # update the google sheet
@@ -526,7 +526,6 @@ def update_appointment(client, appointment):
 
             for question in form['values']:
                 logging.debug("FOUND QUESTION: %s" % question['name'])
-                spreadsheet_header.append(question['name'])
                 logging.debug("FOUND RESPONSE: %s" % question['value'])
                 formatted_appt.append(question['value'])
 
