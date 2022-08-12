@@ -120,7 +120,7 @@ spreadsheet_header_squarespace_transactions = [
                         'Total',
                         'Tax',
                         'Processing Fees',
-                        'Total Net Payment',
+                        'Net Payment',
                         'Discounts',
                         'Credit Card Type',
                         'Provider',
@@ -136,7 +136,7 @@ spreadsheet_header_stripe_transactions = [
                         'Paid On',
                         'Total',
                         'Processing Fees',
-                        'Total Net Payment',
+                        'Net Payment',
                         'Category',
                         'Type',
                         'Txn Id',
@@ -150,6 +150,10 @@ admin_email_accts = [
 
 waterfront_email_accts = [
                         'waterfront@sherbornyachtclub.org',
+                        ]
+
+treasurer_email_accts = [
+                        'treasurer@sherbornyachtclub.org',
                         ]
 
 date_string = "%B %d %Y"
@@ -199,7 +203,11 @@ def update_spreadsheet(spreadsheet, worksheet_title, header_row, rows_to_add):
         logging.debug("Added worksheet: %s" % worksheet_title)
         target_sheet = spreadsheet.add_worksheet(title=worksheet_title, rows=1, cols=len(rows_to_add[0]))
 
-    target_sheet.delete_rows(1)
+    try:
+        target_sheet.delete_rows(1)
+    except Exception as e:
+        logging.debug("Caught exception deleting the first row: %s" % e)
+
     target_sheet.clear()
     target_sheet.resize(rows=1)
     target_sheet.append_row(header_row, value_input_option='USER-ENTERED')
@@ -504,7 +512,7 @@ def sync_stripe_transactions(transacts_in_json, year):
         formatted_transacts.append(formatted_tx)
 
     # get the spreadsheet handler
-    gs = get_spreadsheet(spreadsheet_title)
+    gs = get_spreadsheet(spreadsheet_title, treasurer_email_accts)
 
     # update the google sheet
     # check for column 1 for non-duplicate entries
@@ -700,7 +708,7 @@ def sync_squarespace_transactions(transacts_in_json, year):
         formatted_transacts.append(formatted_tx)
 
     # get the spreadsheet handler
-    gs = get_spreadsheet(spreadsheet_title)
+    gs = get_spreadsheet(spreadsheet_title, treasurer_email_accts)
 
     # update the google sheet
     # check for column 1 for non-duplicate entries
