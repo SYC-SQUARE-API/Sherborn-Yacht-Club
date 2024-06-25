@@ -8,15 +8,15 @@ import os
 import psycopg2
 from psycopg2 import sql
 
-def lambda_handler(event, context):
+def handler(event, context):
     # Get database credentials from environment variables
-    db_user = os.getenv('db-user')
-    db_password = os.getenv('db-passwd')
-    db_server = os.getenv('db-server')
+    db_user = os.environ.get("DB_USER")
+    db_password = os.environ.get("DB_PASS")
+    db_server = os.environ.get("DB_SERVER")
 
     # Construct the connection string
     db_conn_string = f'postgresql://{db_user}:{db_password}@{db_server}.us-west-2.retooldb.com/retool?sslmode=require'
-    
+
     # Parse the JSON payload
     try:
         payload = json.loads(event['body'])
@@ -69,8 +69,9 @@ def lambda_handler(event, context):
                 payload['grandTotal']['value'], payload['channelName'], payload['externalOrderReference'], payload['fulfilledOn'],
                 payload['priceTaxInterpretation']
             )
-            print(f"Executing query with values: {values}")  # Debug log to show the values being inserted
+            #print(f"Executing query with values: {values}")  # Debug log to show the values being inserted
             cursor.execute(query, values)
+            print("Data inserted successfully")
         conn.commit()
     except Exception as e:
         cursor.close()
